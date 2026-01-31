@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RentMaster Pro - Unified Rental System</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+</head>
+<body>
+
+<div class="container">
+    <div id="login-screen" style="padding: 100px 0; text-align: center;">
+        <div style="max-width:350px; margin:auto; border:1px solid #ddd; padding:30px; border-radius:10px; background:white;">
+            <h2>🏠 RentMaster Pro</h2>
+            <input type="text" id="user-id" placeholder="Login ID">
+            <input type="password" id="user-pass" placeholder="Password">
+            <button class="btn btn-owner" style="width:100%" onclick="processLogin()">Login</button>
+            <p style="font-size: 11px; color: gray; margin-top: 10px;">Master: master/admin</p>
+        </div>
+    </div>
+
+    <div id="master-view" class="content">
+        <header style="margin: -25px -25px 20px -25px; background: var(--master);">
+            <strong>Master Admin Console</strong>
+            <button class="btn" style="background:rgba(255,255,255,0.2); color:white" onclick="location.reload()">Logout</button>
+        </header>
+        <div class="property-card" style="border: 2px dashed var(--master); margin-top:20px">
+            <h4>Register New Owner</h4>
+            <div class="grid-3">
+                <input type="text" id="m-own-name" placeholder="Owner Full Name">
+                <input type="text" id="m-own-id" placeholder="Create Login ID">
+                <input type="password" id="m-own-pass" placeholder="Create Password">
+            </div>
+            <button class="btn btn-master" style="margin-top:10px" onclick="createOwner()">Create Owner Account</button>
+        </div>
+        <div id="owners-list"></div>
+    </div>
+
+    <div id="owner-view" class="content">
+        <header style="margin: -25px -25px 20px -25px; background: var(--owner);">
+            <strong id="owner-header-title">Owner Dashboard</strong>
+            <button class="btn" style="background:rgba(255,255,255,0.2); color:white" onclick="location.reload()">Logout</button>
+        </header>
+        <div class="property-card" style="background:#f8fafc; border: 2px dashed #cbd5e1; margin-top: 20px;">
+            <h4 style="margin-top:0">Add New Property Unit</h4>
+            <div class="form-section">Property Information</div>
+            <div class="grid-3">
+                <input type="text" id="new-p-name" placeholder="Property Name">
+                <input type="text" id="new-p-address" placeholder="Full Address">
+                <input type="text" id="new-p-flat" placeholder="Flat/Unit Number">
+                <input type="text" id="new-p-owner-phone" placeholder="Owner Mobile Number">
+            </div>
+            <div class="form-section" style="margin-top:15px">Tenant Information</div>
+            <div class="grid-3">
+                <input type="text" id="new-t-name" placeholder="Tenant Full Name">
+                <input type="text" id="new-t-id" placeholder="NID / Identity Number">
+                <input type="text" id="new-t-phone" placeholder="Tenant Mobile Number">
+                <input type="number" id="new-t-family" placeholder="No. of Family Members">
+                <input type="password" id="new-t-pass" placeholder="Create Tenant Password">
+            </div>
+            <div class="form-section" style="margin-top:15px">Rent Information</div>
+            <div class="grid-3">
+                <input type="number" id="new-p-rent" placeholder="Monthly Rent" oninput="calcTotal()">
+                <input type="number" id="new-p-service" placeholder="Service Charge" oninput="calcTotal()">
+                <input type="text" id="new-p-total" placeholder="Total Payable" disabled style="background:#e2e8f0">
+                <input type="number" id="new-p-advance" placeholder="Advance Amount">
+                <input type="date" id="new-p-date">
+            </div>
+            <button class="btn btn-owner" style="margin-top:10px" onclick="createNewProperty()">Register Property</button>
+        </div>
+        <div id="master-list"></div>
+    </div>
+
+    <div id="tenant-view" class="content">
+        <header style="margin: -25px -25px 20px -25px; background:var(--tenant)">
+            <strong id="t-header-title">Tenant Portal</strong>
+            <button class="btn" style="background:rgba(255,255,255,0.2); color:white" onclick="location.reload()">Logout</button>
+        </header>
+        <div id="tenant-display"></div>
+        <div id="tenant-billing-section"></div>
+        <div class="property-card" style="margin-top:20px; border-top: 4px solid var(--danger);">
+            <h4>🛠️ Raise Maintenance Issue</h4>
+            <textarea id="issue-text" rows="2" placeholder="Describe the problem..."></textarea>
+            <button class="btn btn-owner" style="background: var(--danger)" onclick="submitIssue()">Submit Request</button>
+        </div>
+        <div id="tenant-maintenance-history"></div>
+    </div>
+
+    <div id="modal">
+        <div class="modal-content" id="modal-body"></div>
+    </div>
+</div>
+
+<div id="receipt-overlay">
+    <div id="receipt-content"></div>
+</div>
+
+<!-- Load Firebase SDK as a module -->
+<script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-app.js";
+    import { getDatabase, ref, get, set } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-database.js";
+
+    const firebaseConfig = {
+        apiKey: "AIzaSyBKz6_a98EvnsRETpNdNEJH8iOnCI_sAY8",
+        authDomain: "rentmasterpro-97e04.firebaseapp.com",
+        projectId: "rentmasterpro-97e04",
+        storageBucket: "rentmasterpro-97e04.firebasestorage.app",
+        messagingSenderId: "320879292945",
+        appId: "1:320879292945:web:93bc22e158faeda0db77b0",
+        databaseURL: "https://rentmasterpro-97e04-default-rtdb.firebaseio.com"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const database = getDatabase(app);
+    
+    // Expose to global scope for other scripts
+    window.firebase = { app, database };
+    window.firebaseRef = ref(database, 'RentMasterData');
+    window.firebaseGet = get;
+    window.firebaseSet = set;
+    
+    console.log('Firebase initialized successfully');
+</script>
+
+<script src="app.js"></script>
+</body>
+</html>

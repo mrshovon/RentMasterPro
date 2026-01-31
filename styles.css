@@ -1,0 +1,276 @@
+:root { --master: #4f46e5; --owner: #0f172a; --tenant: #0891b2; --danger: #dc2626; --success: #10b981; --warning: #f59e0b; }
+body { font-family: 'Inter', system-ui, sans-serif; background: #f1f5f9; padding: 20px; color: #1e293b; }
+.container { max-width: 1100px; margin: 0 auto; background: white; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); overflow: hidden; }
+header { padding: 15px 25px; display: flex; justify-content: space-between; align-items: center; color: white; }
+.content { padding: 25px; display: none; }
+
+/* Dashboard UI */
+.property-card { border: 1px solid #e2e8f0; border-radius: 8px; padding: 20px; margin-bottom: 25px; background: #fff; position: relative; }
+.log-table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 11px; }
+.log-table th, .log-table td { border: 1px solid #f1f5f9; padding: 8px; text-align: left; }
+.log-table th { background: #f8fafc; color: #64748b; }
+.grid-layout { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 15px; }
+.grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+
+/* Inputs & Buttons */
+input, textarea { width: 100%; padding: 10px; margin: 5px 0; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box; }
+.btn { padding: 10px 15px; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 13px; }
+.btn-master { background: var(--master); color: white; }
+.btn-owner { background: var(--owner); color: white; }
+.btn-edit { background: var(--tenant); color: white; }
+.btn-vacate { background: var(--warning); color: white; }
+.btn-danger { background: #fef2f2; color: var(--danger); border: 1px solid #fee2e2; }
+.btn-success { background: var(--success); color: white; }
+
+/* Maintenance Styles */
+.issue-box { background: #fff1f2; border-left: 4px solid var(--danger); padding: 10px; margin-top: 10px; border-radius: 4px; font-size: 13px; }
+.resolved-box { background: #f0fdf4; border-left: 4px solid var(--success); padding: 8px; margin-top: 5px; border-radius: 4px; font-size: 12px; color: #166534; }
+
+/* Status Pills */
+.status-pill { padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: bold; text-transform: uppercase; }
+.status-unpaid { background: #fee2e2; color: #dc2626; }
+.status-pending { background: #ffedd5; color: #ea580c; }
+.status-paid { background: #dcfce7; color: #166534; }
+
+/* Modal & UI Tweaks */
+#modal { display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.6); z-index:100; justify-content:center; align-items:center; }
+.modal-content { background:white; padding:25px; border-radius:12px; width:650px; max-height: 90vh; overflow-y: auto; }
+.checkbox-container { background: #fff7ed; padding: 15px; border-radius: 8px; border: 1px solid #ffedd5; margin-bottom: 15px; display: flex; align-items: center; gap: 12px; }
+.checkbox-container input { width: 20px; height: 20px; cursor: pointer; }
+.form-section { border-bottom: 1px solid #eee; margin-bottom: 15px; padding-bottom: 5px; color: var(--master); font-size: 12px; text-transform: uppercase; font-weight: bold; }
+
+/* --- Compact Horizontal Receipt Layout --- */
+#receipt-overlay { 
+    display: none; 
+    position: fixed; 
+    top: 0; left: 0; 
+    width: 100%; height: 100%; 
+    background: rgba(0,0,0,0.85); 
+    z-index: 9999; 
+    overflow-y: auto; 
+    padding: 10px; 
+}
+
+.receipt-container { 
+    background: white; 
+    width: 195mm; /* Max width for A4 portrait */
+    max-width: 98%;
+    margin: 15px auto; 
+    padding: 6mm 10mm; /* Reduced vertical padding to make it shorter */
+    color: #000; 
+    position: relative; 
+    border: 2px solid #000; 
+    font-family: 'Arial', sans-serif;
+    box-sizing: border-box; 
+}
+
+.receipt-header { 
+    text-align: center; 
+    border-bottom: 2px solid #000; 
+    padding-bottom: 5px; 
+    margin-bottom: 10px; 
+    position: relative; 
+}
+
+.receipt-header h1 { 
+    text-decoration: underline; 
+    margin: 0; 
+    font-size: 22px; 
+    font-weight: 900; 
+    text-transform: uppercase; 
+}
+
+.copy-tag { 
+    position: absolute; 
+    top: 0; 
+    right: 0; 
+    font-size: 10px; 
+    font-weight: bold; 
+    color: #444; 
+}
+
+.receipt-row { 
+    display: flex; 
+    justify-content: space-between; 
+    border-bottom: 1px dotted #999; 
+    padding: 4px 0; /* Tightened row spacing */
+    font-size: 14px; 
+}
+
+.total-box { 
+    border: 2px solid #000; 
+    padding: 8px 15px; 
+    margin-top: 5px; 
+    display: flex; 
+    justify-content: space-between; 
+    align-items: center; 
+    font-size: 18px; 
+    font-weight: bold; 
+}
+
+.receipt-footer { 
+    margin-top: 20px; /* Reduced margin */
+    display: flex; 
+    justify-content: space-between; 
+    align-items: flex-end; 
+}
+
+.signature-line { 
+    margin-top: 20px;
+    border-top: 1.5px solid #000; 
+    width: 160px; 
+    text-align: center; 
+    padding-top: 3px; 
+    font-weight: bold; 
+    font-size: 10px;
+}
+
+/* --- Print Media Query --- */
+@media print {
+    @page { 
+        size: A4 portrait; 
+        margin: 0; 
+    }
+
+    /* 1. CRITICAL: Hide the rest of the website without leaving "ghost space" */
+    body > *:not(#receipt-overlay) {
+        display: none !important;
+    }
+
+    body {
+        margin: 0;
+        padding: 0;
+        visibility: hidden; /* Fallback */
+    }
+
+    /* 2. Setup the Overlay to strictly occupy only one page */
+    #receipt-overlay { 
+        visibility: visible !important;
+        display: block !important;
+        position: absolute; 
+        top: 0; 
+        left: 0; 
+        width: 100%;
+        height: 9.5cm; /* Matches container to prevent overflow */
+        background: rgb(255, 255, 255) !important; 
+        -webkit-print-color-adjust: exact; /* Required to print the background color */
+        print-color-adjust: exact;
+        padding: 0;
+        overflow: hidden;
+    }
+
+    /* 3. The Container */
+    .receipt-container { 
+        visibility: visible !important;
+        box-shadow: none !important; 
+        border: 1px solid #ffffff !important; 
+        margin: 0 !important;
+        padding: 3mm !important;
+        width: 10.625cm !important; 
+        height: 10cm !important;
+        max-width: 12.5cm !important;
+        position: absolute !important;
+        top: 0 !important;
+        left: 0 !important;
+        box-sizing: border-box !important;
+        overflow: hidden !important;
+        font-size: 11px !important;
+        page-break-inside: avoid; /* Prevents splitting */
+    }
+
+    /* 4. All your specific layout code restored */
+    .receipt-row {
+        width: 100% !important;
+        box-sizing: border-box !important;
+        padding: 2px 0 !important;
+        margin: 0 !important;
+        visibility: visible !important;
+    }
+
+    .receipt-header h1 {
+        font-size: 16px !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        visibility: visible !important;
+    }
+
+    .receipt-header {
+        padding: 0 0 3px 0 !important;
+        margin-bottom: 5px !important;
+        visibility: visible !important;
+    }
+
+    .total-box {
+        margin-top: 5px !important;
+        padding: 4px 10px !important;
+        font-size: 12px !important;
+        visibility: visible !important;
+    }
+
+    .receipt-footer {
+        margin-top: 5px !important;
+        visibility: visible !important;
+    }
+
+    .signature-line {
+        width: 130px !important;
+        font-size: 10px !important;
+        visibility: visible !important;
+    }
+
+    .no-print { 
+        display: none !important; 
+    }
+}
+
+/* --- Maintenance Tenant Section Styles --- */
+.maint-container {
+    background: #ffffff;
+    border: 1px solid #e1e4e8;
+    border-radius: 10px;
+    padding: 16px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+}
+
+.maint-header {
+    display: block;
+    font-size: 11px;
+    font-weight: 700;
+    color: #8b949e;
+    text-transform: uppercase;
+    margin-bottom: 12px;
+}
+
+.maint-item {
+    display: flex;
+    align-items: center;
+    padding: 10px 12px;
+    margin-bottom: 8px;
+    background: #fdfdfd;
+    border: 1px solid #f0f0f0;
+    border-radius: 6px;
+    font-size: 14px;
+}
+
+/* Status Colors */
+.maint-item.unfixed { border-left: 4px solid #f85149; } /* Red */
+.maint-item.fixed { border-left: 4px solid #2ea043; }   /* Green */
+
+.status-dot {
+    height: 8px;
+    width: 8px;
+    border-radius: 50%;
+    margin-right: 12px;
+    display: inline-block;
+}
+
+.unfixed .status-dot { background-color: #f85149; }
+.fixed .status-dot { background-color: #2ea043; }
+
+.maint-list {
+    max-height: 150px;
+    overflow-y: auto;
+    margin-top: 10px;
+    border-top: 1px dashed #eee;
+    padding-top: 10px;
+}
