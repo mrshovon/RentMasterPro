@@ -7,10 +7,10 @@ let tokenRefreshListener = null;
 let messageListener = null;
 
 // Wait for Firebase to be initialized
-let firebaseReadyInterval = setInterval(function() {
+let messagingReadyInterval = setInterval(function() {
     if (window.firebase && window.firebase.messaging) {
         messaging = window.firebase.messaging;
-        clearInterval(firebaseReadyInterval);
+        clearInterval(messagingReadyInterval);
         console.log('Firebase Messaging ready');
     }
 }, 50);
