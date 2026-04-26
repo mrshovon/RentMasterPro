@@ -11,6 +11,9 @@ const urlsToCache = [
   'https://www.gstatic.com/firebasejs/10.7.0/firebase-app.js',
   'https://www.gstatic.com/firebasejs/10.7.0/firebase-database.js',
   'https://www.gstatic.com/firebasejs/10.7.0/firebase-messaging.js'
+  // Note: PNG icons will be cached when they exist
+  // '/RentMasterPro/icon-192x192.png',
+  // '/RentMasterPro/icon-512x512.png'
 ];
 
 // Install event - cache resources
