@@ -80,13 +80,30 @@ async function getDeviceToken() {
 }
 
 /**
- * Register device in Firebase database for record-keeping
- * PushAlert handles actual device registration automatically
+ * Register device in Firebase database and add custom attributes to PushAlert
  * @param {string} userId - User ID (owner ID or property ID for tenants)
  * @param {string} userType - 'owner' or 'tenant'
  */
 async function registerDeviceToken(userId, userType) {
     try {
+        const pushAlertApiKey = 'f597dda938deaf66cef63486a98dee93';
+
+        // Add custom attributes to PushAlert subscriber
+        // This allows us to target specific users
+        await fetch('https://api.pushalert.co/rest/v1/attribute/put', {
+            method: 'POST',
+            headers: {
+                'Authorization': `api_key=${pushAlertApiKey}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                userId: userId,
+                userType: userType
+            })
+        });
+
+        console.log('PushAlert attributes set for:', userId, userType);
+
         // Store in Firebase database for record-keeping
         const db = await getDB();
         if (!db.deviceTokens) {
@@ -153,7 +170,7 @@ async function getTenantTokens(propertyId) {
 
 /**
  * Send push notification to specific users
- * Uses PushAlert REST API to send notifications
+ * Uses PushAlert REST API to send notifications to specific subscribers
  * @param {Array} userIds - Array of user IDs (owner IDs or property IDs for tenants)
  * @param {Object} notification - Notification object {title, body, data, url}
  */
@@ -161,32 +178,36 @@ async function sendPushNotification(userIds, notification) {
     try {
         const pushAlertApiKey = 'f597dda938deaf66cef63486a98dee93';
 
-        // Send notification via PushAlert REST API
-        const response = await fetch('https://api.pushalert.co/rest/v1/send', {
-            method: 'POST',
-            headers: {
-                'Authorization': `api_key=${pushAlertApiKey}`,
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                title: notification.title,
-                message: notification.body,
-                url: notification.url || window.location.href
-            })
-        });
+        // Send notification to specific users by their userId attribute
+        // Send to each user individually
+        for (const userId of userIds) {
+            const response = await fetch('https://api.pushalert.co/rest/v1/send', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `api_key=${pushAlertApiKey}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    title: notification.title,
+                    message: notification.body,
+                    url: notification.url || window.location.href,
+                    // Target specific subscriber by userId attribute
+                    userId: userId
+                })
+            });
 
-        const result = await response.json();
+            const result = await response.json();
 
-        if (result.success) {
-            console.log('PushAlert notification sent successfully:', result);
-            // Also store in database for record-keeping
-            await storeNotificationInDatabase(userIds, notification);
-            return true;
-        } else {
-            console.error('PushAlert API error:', result);
-            // Fallback to database storage
-            return await storeNotificationInDatabase(userIds, notification);
+            if (result.success) {
+                console.log('PushAlert notification sent to user:', userId, result);
+            } else {
+                console.error('PushAlert API error for user:', userId, result);
+            }
         }
+
+        // Store in database for record-keeping
+        await storeNotificationInDatabase(userIds, notification);
+        return true;
     } catch (error) {
         console.error('Error sending notification via PushAlert API:', error);
         // Fallback to database storage if API fails
