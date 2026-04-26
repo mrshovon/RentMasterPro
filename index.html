@@ -68,20 +68,15 @@
               Login
             </button>
             <button
-              class="btn"
-              style="
-                width: 100%;
-                margin-top: 10px;
-                background: var(--tenant);
-                color: white;
-              "
-              onclick="enableNotifications()"
+              class="btn btn-tenant"
+              style="width: 100%; margin-top: 10px"
+              onclick="showTenantLogin()"
             >
               <i
-                data-lucide="bell"
+                data-lucide="users"
                 style="width: 18px; height: 18px; margin-right: 8px"
               ></i>
-              Enable Notifications
+              Tenant Login
             </button>
             <p class="login-hint">Master: master/admin</p>
           </div>
@@ -141,17 +136,30 @@
             <i data-lucide="building-2" style="width: 24px; height: 24px"></i>
             <strong id="owner-header-title">Owner Dashboard</strong>
           </div>
-          <button
-            class="btn"
-            style="background: rgba(255, 255, 255, 0.2); color: white"
-            onclick="location.reload()"
-          >
-            <i
-              data-lucide="log-out"
-              style="width: 16px; height: 16px; margin-right: 6px"
-            ></i>
-            Logout
-          </button>
+          <div style="display: flex; gap: 8px">
+            <button
+              class="btn"
+              style="background: rgba(255, 255, 255, 0.2); color: white"
+              onclick="enableNotifications()"
+            >
+              <i
+                data-lucide="bell"
+                style="width: 16px; height: 16px; margin-right: 6px"
+              ></i>
+              Enable Notifications
+            </button>
+            <button
+              class="btn"
+              style="background: rgba(255, 255, 255, 0.2); color: white"
+              onclick="location.reload()"
+            >
+              <i
+                data-lucide="log-out"
+                style="width: 16px; height: 16px; margin-right: 6px"
+              ></i>
+              Logout
+            </button>
+          </div>
         </header>
         <div
           class="property-card"
@@ -248,17 +256,30 @@
             <i data-lucide="user-circle" style="width: 24px; height: 24px"></i>
             <strong id="t-header-title">Tenant Portal</strong>
           </div>
-          <button
-            class="btn"
-            style="background: rgba(255, 255, 255, 0.2); color: white"
-            onclick="location.reload()"
-          >
-            <i
-              data-lucide="log-out"
-              style="width: 16px; height: 16px; margin-right: 6px"
-            ></i>
-            Logout
-          </button>
+          <div style="display: flex; gap: 8px">
+            <button
+              class="btn"
+              style="background: rgba(255, 255, 255, 0.2); color: white"
+              onclick="enableNotifications()"
+            >
+              <i
+                data-lucide="bell"
+                style="width: 16px; height: 16px; margin-right: 6px"
+              ></i>
+              Enable Notifications
+            </button>
+            <button
+              class="btn"
+              style="background: rgba(255, 255, 255, 0.2); color: white"
+              onclick="location.reload()"
+            >
+              <i
+                data-lucide="log-out"
+                style="width: 16px; height: 16px; margin-right: 6px"
+              ></i>
+              Logout
+            </button>
+          </div>
         </header>
         <div id="tenant-display"></div>
         <div id="tenant-billing-section"></div>
@@ -306,6 +327,10 @@
         getToken,
         onMessage,
       } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-messaging.js";
+      import {
+        getFunctions,
+        httpsCallable,
+      } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-functions.js";
 
       const firebaseConfig = {
         apiKey: "AIzaSyBKz6_a98EvnsRETpNdNEJH8iOnCI_sAY8",
@@ -320,14 +345,17 @@
       const app = initializeApp(firebaseConfig);
       const database = getDatabase(app);
       const messaging = getMessaging(app);
+      const functions = getFunctions(app);
 
       // Expose to global scope for other scripts
-      window.firebase = { app, database, messaging };
+      window.firebase = { app, database, messaging, functions };
       window.firebaseRef = ref(database, "RentMasterData");
       window.firebaseGet = get;
       window.firebaseSet = set;
       window.firebaseGetToken = getToken;
       window.firebaseOnMessage = onMessage;
+      window.firebaseFunctions = functions;
+      window.firebaseHttpsCallable = httpsCallable;
 
       console.log("Firebase initialized successfully");
     </script>

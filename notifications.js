@@ -158,15 +158,38 @@ async function getTenantTokens(propertyId) {
 
 /**
  * Send push notification to specific tokens
- * Note: This requires Firebase Cloud Functions or a backend server
- * For client-side only, we'll store notifications in database and let service worker handle them
+ * Calls Firebase Cloud Function to send actual push notifications
+ * @param {Array} tokens - Array of device tokens
+ * @param {Object} notification - Notification object {title, body, data, url}
+ */
+async function sendPushNotification(tokens, notification) {
+    try {
+        // Call Firebase Cloud Function to send notification
+        const functions = window.firebaseFunctions;
+        if (!functions) {
+            console.warn('Firebase Functions not initialized, storing in database instead');
+            return await storeNotificationInDatabase(tokens, notification);
+        }
+
+        const sendNotification = functions.httpsCallable('sendNotification');
+        const result = await sendNotification({ tokens, notification });
+
+        console.log('Notification sent via Cloud Function:', result.data);
+        return true;
+    } catch (error) {
+        console.error('Error sending notification via Cloud Function:', error);
+        // Fallback to database storage if Cloud Function fails
+        console.log('Falling back to database storage');
+        return await storeNotificationInDatabase(tokens, notification);
+    }
+}
+
+/**
+ * Store notification in database (fallback method)
  * @param {Array} tokens - Array of device tokens
  * @param {Object} notification - Notification object {title, body, data}
  */
-async function sendPushNotification(tokens, notification) {
-    // For client-side implementation, we'll store notifications in database
-    // In production, use Firebase Cloud Functions to send actual push notifications
-    
+async function storeNotificationInDatabase(tokens, notification) {
     try {
         const db = await getDB();
         if (!db.notifications) {
@@ -187,17 +210,9 @@ async function sendPushNotification(tokens, notification) {
 
         await setDB(db);
         console.log('Notification stored in database:', notification);
-        
-        // In production, you would call Firebase Cloud Functions here
-        // Example: await fetch('https://your-cloud-function-url/sendNotification', {
-        //     method: 'POST',
-        //     headers: { 'Content-Type': 'application/json' },
-        //     body: JSON.stringify({ tokens, notification })
-        // });
-
         return true;
     } catch (error) {
-        console.error('Error sending notification:', error);
+        console.error('Error storing notification:', error);
         return false;
     }
 }
