@@ -162,7 +162,7 @@ async function sendPushNotification(userIds, notification) {
         const pushAlertApiKey = 'f597dda938deaf66cef63486a98dee93';
 
         // Send notification via PushAlert REST API
-        const response = await fetch('https://api.pushalert.co/v1/send', {
+        const response = await fetch('https://api.pushalert.co/rest/v1/send', {
             method: 'POST',
             headers: {
                 'Authorization': `api_key=${pushAlertApiKey}`,
