@@ -1,6 +1,28 @@
-let sessionUser = null; 
-let curIdx = null; 
+let sessionUser = null;
+let curIdx = null;
 let curPid = null; // stable property id for tenant sessions
+
+// Initialize Lucide icons
+document.addEventListener('DOMContentLoaded', function() {
+  if (typeof lucide !== 'undefined') {
+    lucide.createIcons();
+  }
+});
+
+// Enable notifications function
+async function enableNotifications() {
+  if (typeof NotificationService !== 'undefined') {
+    const permissionGranted = await NotificationService.requestNotificationPermission();
+    if (permissionGranted) {
+      alert('Notifications enabled! You will receive alerts for rent bills, payments, and maintenance issues.');
+    } else {
+      alert('Notification permission denied. You can enable it later in browser settings.');
+    }
+  } else {
+    alert('Notification service not ready. Please try again later.');
+  }
+  lucide.createIcons();
+}
 
 // Firebase Database Reference (initialized in index.html)
 let firebaseRef = window.firebaseRef || null;
@@ -62,9 +84,21 @@ async function processLogin() {
     const owners = db.owners || [];
     const properties = db.properties || [];
     const own = owners.find(o => o.id == id && o.pass == pass);
-    if(own) { sessionUser = own; $('#login-screen').hide(); $('#owner-view').show(); $('#owner-header-title').text(`Dashboard: ${own.name}`); renderOwner(); return; }
+    if(own) { sessionUser = own; $('#login-screen').hide(); $('#owner-view').show(); $('#owner-header-title').text(`Dashboard: ${own.name}`); renderOwner(); 
+        // Initialize notifications for owner
+        if (typeof NotificationService !== 'undefined') {
+            NotificationService.initializeNotifications(own.id, 'owner');
+        }
+        return; 
+    }
     const pIdx = properties.findIndex(p => p.id == id && p.pass == pass);
-    if(pIdx != -1) { curIdx = pIdx; curPid = properties[pIdx].id; $('#login-screen').hide(); $('#tenant-view').show(); renderTenant(); return; }
+    if(pIdx != -1) { curIdx = pIdx; curPid = properties[pIdx].id; $('#login-screen').hide(); $('#tenant-view').show(); renderTenant(); 
+        // Initialize notifications for tenant
+        if (typeof NotificationService !== 'undefined') {
+            NotificationService.initializeNotifications(properties[pIdx].id, 'tenant');
+        }
+        return; 
+    }
     alert("Invalid login credentials.");
 }
 
@@ -79,11 +113,11 @@ async function createOwner() {
 }
 
 async function renderMaster() {
-    const db = await getDB(); 
+    const db = await getDB();
     const list = $('#owners-list').empty().append('<h3>Registered Owners</h3>');
     const owners = db.owners || [];
     const properties = db.properties || [];
-    
+
     owners.forEach((o, i) => {
         const propCount = properties.filter(p => p.ownerId == o.id).length;
         list.append(`
@@ -97,6 +131,7 @@ async function renderMaster() {
                 </div>
             </div>`);
     });
+    lucide.createIcons();
 }
 
 async function openOwnerEdit(i) {
@@ -144,19 +179,31 @@ async function createNewProperty() {
         ownerId: sessionUser.id, ownerName: sessionUser.name, ownerPhone: $('#new-p-owner-phone').val(),
         id: 'UNIT-'+Math.floor(1000+Math.random()*9000), name: $('#new-p-name').val(), address: $('#new-p-address').val(), flatNo: $('#new-p-flat').val(),
         tName: $('#new-t-name').val(), tId: $('#new-t-id').val(), tPhone: $('#new-t-phone').val(), tFamily: $('#new-t-family').val(),
-        rent: rent, serviceCharge: service, totalRent: rent + service, advance: $('#new-p-advance').val(), rentedDate: $('#new-p-date').val(), 
+        rent: rent, serviceCharge: service, totalRent: rent + service, advance: $('#new-p-advance').val(), rentedDate: $('#new-p-date').val(),
         pass: $('#new-t-pass').val(), history: [], rentLogs: [], issues: [], solvedIssues: [], billing: []
     };
     if(!p.name || !p.tName) return alert("Fill required names");
     if (!db.properties) db.properties = [];
-    db.properties.push(p); 
-    await setDB(db); 
+    db.properties.push(p);
+    await setDB(db);
     renderOwner();
     $('#owner-view input').val(''); $('#new-p-total').val('');
+
+    // Send notification to tenant
+    if (typeof NotificationService !== 'undefined' && p.tName) {
+        const tenantTokens = await NotificationService.getTenantTokens(p.id);
+        if (tenantTokens.length > 0) {
+            const notification = NotificationService.NotificationTemplates.tenantRegistered(
+                p.name,
+                p.ownerName
+            );
+            await NotificationService.sendPushNotification(tenantTokens.map(t => t.token), notification);
+        }
+    }
 }
 
 async function renderOwner() {
-    const db = await getDB(); 
+    const db = await getDB();
     const list = $('#master-list').empty();
     const properties = db.properties || [];
     properties.filter(p => p.ownerId == sessionUser.id).forEach((p) => {
@@ -193,6 +240,7 @@ async function renderOwner() {
                 </div>
             </div>`);
     });
+    lucide.createIcons();
 }
 
 async function initiateBill(pid) {
@@ -233,27 +281,40 @@ async function initiateBill(pid) {
 }
 
 async function createBillWithDetails(pid) {
-    const db = await getDB(); 
+    const db = await getDB();
     const p = db.properties.find(x => x.id == pid);
     const month = new Date().toLocaleString('default', { month: 'long', year: 'numeric' });
     const extraCharge = parseFloat($('#extra-charge').val()) || 0;
     const note = $('#bill-note').val();
-    
+
     const totalAmount = p.totalRent + extraCharge;
-    
-    p.billing.unshift({ 
-        month, 
-        amount: totalAmount, 
+
+    p.billing.unshift({
+        month,
+        amount: totalAmount,
         baseAmount: p.totalRent,
         extraCharge: extraCharge,
         note: note,
         status: 'unpaid',
         createdDate: new Date().toLocaleDateString()
     });
-    
-    await setDB(db); 
+
+    await setDB(db);
     $('#modal').hide();
     renderOwner();
+
+    // Send notification to tenant
+    if (typeof NotificationService !== 'undefined' && p.tName) {
+        const tenantTokens = await NotificationService.getTenantTokens(p.id);
+        if (tenantTokens.length > 0) {
+            const notification = NotificationService.NotificationTemplates.rentBillInitiated(
+                month,
+                totalAmount,
+                p.name
+            );
+            await NotificationService.sendPushNotification(tenantTokens.map(t => t.token), notification);
+        }
+    }
 }
 
 async function confirmPayment(pid, bi) {
@@ -277,27 +338,48 @@ async function confirmPayment(pid, bi) {
 }
 
 async function savePaidPayment(pid, bi) {
-    const db = await getDB(); 
+    const db = await getDB();
     const p = db.properties.find(x => x.id == pid);
     const receivedDate = $('#received-date').val();
-    
+
     if(!receivedDate) return alert("Please select received date");
-    
+
     p.billing[bi].status = 'paid';
     p.billing[bi].paidDate = receivedDate;
-    await setDB(db); 
+    await setDB(db);
     $('#modal').hide();
     renderOwner();
+
+    // Send notification to tenant
+    if (typeof NotificationService !== 'undefined' && p.tName) {
+        const tenantTokens = await NotificationService.getTenantTokens(p.id);
+        if (tenantTokens.length > 0) {
+            const notification = NotificationService.NotificationTemplates.rentPaymentConfirmed(
+                p.billing[bi].month,
+                p.billing[bi].amount
+            );
+            await NotificationService.sendPushNotification(tenantTokens.map(t => t.token), notification);
+        }
+    }
 }
 
 async function fixIssue(id, idx) {
-    const db = await getDB(); 
+    const db = await getDB();
     const p = db.properties.find(x => x.id == id);
     const res = p.issues.splice(idx, 1)[0];
     if(!p.solvedIssues) p.solvedIssues = [];
     p.solvedIssues.push(res + " [Fixed: " + new Date().toLocaleDateString() + "]");
-    await setDB(db); 
+    await setDB(db);
     renderOwner();
+
+    // Send notification to tenant
+    if (typeof NotificationService !== 'undefined' && p.tName) {
+        const tenantTokens = await NotificationService.getTenantTokens(p.id);
+        if (tenantTokens.length > 0) {
+            const notification = NotificationService.NotificationTemplates.maintenanceIssueResolved(p.name);
+            await NotificationService.sendPushNotification(tenantTokens.map(t => t.token), notification);
+        }
+    }
 }
 
 async function openVacateModal(id) {
@@ -314,16 +396,29 @@ async function openVacateModal(id) {
 }
 
 async function processVacate(id) {
-    const db = await getDB(); 
+    const db = await getDB();
     const p = db.properties.find(x => x.id == id);
-    const endDate = $('#vacate-date').val(); 
+    const endDate = $('#vacate-date').val();
     if(!endDate) return alert("Select date");
+
+    const tenantName = p.tName; // Store before clearing
+    const propertyName = p.name;
+
     p.history.push({ name: p.tName, end: endDate, adv: p.advance, rent: p.rent, srv: p.serviceCharge });
     p.tName = ""; p.tId = ""; p.tPhone = ""; p.tFamily = ""; p.pass = ""; p.rentedDate = "";
     p.rentLogs = []; p.issues = []; p.solvedIssues = []; p.billing = [];
-    await setDB(db); 
-    $('#modal').hide(); 
+    await setDB(db);
+    $('#modal').hide();
     renderOwner();
+
+    // Send notification to tenant
+    if (typeof NotificationService !== 'undefined' && tenantName) {
+        const tenantTokens = await NotificationService.getTenantTokens(p.id);
+        if (tenantTokens.length > 0) {
+            const notification = NotificationService.NotificationTemplates.tenantVacated(propertyName);
+            await NotificationService.sendPushNotification(tenantTokens.map(t => t.token), notification);
+        }
+    }
 }
 
 async function openPropEdit(id) {
@@ -356,7 +451,7 @@ async function openPropEdit(id) {
 }
 
 async function savePropEdit(id) {
-    const db = await getDB(); 
+    const db = await getDB();
     const p = db.properties.find(x => x.id == id);
     if (!p) {
         alert('Property not found');
@@ -365,19 +460,36 @@ async function savePropEdit(id) {
     const today = new Date().toLocaleDateString();
     const newRent = parseFloat($('#ep-rent').val()) || 0;
     const newService = parseFloat($('#ep-service').val()) || 0;
-    if($('#is-new-tenant').is(':checked')) { 
+    const oldRent = p.rent;
+    let rentChanged = false;
+
+    if($('#is-new-tenant').is(':checked')) {
         if (!p.history) p.history = [];
-        p.history.push({ name: p.tName, end: today, adv: p.advance, rent: p.rent, srv: p.serviceCharge }); 
+        p.history.push({ name: p.tName, end: today, adv: p.advance, rent: p.rent, srv: p.serviceCharge });
         p.rentLogs=[]; p.issues=[]; p.solvedIssues=[]; p.billing = [];
-    } else if(p.rent != newRent) { 
+    } else if(p.rent != newRent) {
         if (!p.rentLogs) p.rentLogs = [];
-        p.rentLogs.push({date: today, old: p.rent, new: newRent}); 
+        p.rentLogs.push({date: today, old: p.rent, new: newRent});
+        rentChanged = true;
     }
     p.name=$('#ep-name').val(); p.flatNo=$('#ep-flat').val(); p.rent=newRent; p.serviceCharge=newService; p.totalRent=newRent + newService;
     p.advance=$('#ep-advance').val(); p.rentedDate=$('#ep-date').val(); p.tName=$('#et-name').val(); p.tPhone=$('#et-phone').val(); p.tId=$('#et-id').val(); p.tFamily=$('#et-family').val(); p.pass=$('#et-pass').val();
-    await setDB(db); 
-    $('#modal').hide(); 
+    await setDB(db);
+    $('#modal').hide();
     renderOwner();
+
+    // Send notification to tenant if rent changed
+    if (rentChanged && typeof NotificationService !== 'undefined' && p.tName) {
+        const tenantTokens = await NotificationService.getTenantTokens(p.id);
+        if (tenantTokens.length > 0) {
+            const notification = NotificationService.NotificationTemplates.rentChanged(
+                oldRent,
+                newRent,
+                p.name
+            );
+            await NotificationService.sendPushNotification(tenantTokens.map(t => t.token), notification);
+        }
+    }
 }
 
 async function deleteProperty(id) { 
@@ -414,7 +526,7 @@ async function renderTenant() {
         let btn = b.status == 'unpaid' ? `<button class="btn btn-success" onclick="tenantNotifyPay(${bi})">Rent Sent/paid</button>` : b.status == 'pending' ? `<i>Pending</i>` : `<b>PAID</b>`;
         return `<tr><td>${b.month}</td><td>৳${b.amount}</td><td>${b.status}</td><td>${btn} <button class="btn btn-edit" onclick="viewReceipt('${p.id}', ${bi}, 'Tenant')">Receipt</button></td></tr>`;
     }).join('');
-    
+
     // Enhanced tenant display with more details
     let tenantHTML = `
         <div class="property-card">
@@ -458,14 +570,15 @@ async function renderTenant() {
             </div>
         </div>
     `;
-    
+
     $('#tenant-display').html(tenantHTML);
     $('#tenant-billing-section').html(`<div class="property-card"><h4>💳 Payment History</h4><table class="log-table">${bRows || '<tr><td colspan="4">No billing records</td></tr>'}</table></div>`);
     updateMaintenanceUI(p);
+    lucide.createIcons();
 }
 
-async function tenantNotifyPay(bi) { 
-    const db = await getDB(); 
+async function tenantNotifyPay(bi) {
+    const db = await getDB();
     if(!db.properties) {
         console.error('No properties in DB');
         return;
@@ -481,15 +594,28 @@ async function tenantNotifyPay(bi) {
         console.warn('Billing entry not found at index', bi);
         return;
     }
-    p.billing[bi].status = 'pending'; 
-    await setDB(db); 
-    renderTenant(); 
+    p.billing[bi].status = 'pending';
+    await setDB(db);
+    renderTenant();
+
+    // Send notification to owner
+    if (typeof NotificationService !== 'undefined' && p.ownerId) {
+        const ownerTokens = await NotificationService.getOwnerTokens(p.ownerId);
+        if (ownerTokens.length > 0) {
+            const notification = NotificationService.NotificationTemplates.rentPaymentSent(
+                p.tName,
+                p.billing[bi].month,
+                p.billing[bi].amount
+            );
+            await NotificationService.sendPushNotification(ownerTokens.map(t => t.token), notification);
+        }
+    }
 }
 
 async function submitIssue() {
-    const text = $('#issue-text').val(); 
+    const text = $('#issue-text').val();
     if(!text) return;
-    const db = await getDB(); 
+    const db = await getDB();
     if(!db.properties) {
         console.error('No properties in DB');
         return alert('Error: Property not found');
@@ -504,9 +630,22 @@ async function submitIssue() {
     if(!p.issues) p.issues = [];
     p.issues.push(text + " (" + new Date().toLocaleDateString() + ")");
     //console.log('Issue submitted. Total issues now:', p.issues.length);
-    await setDB(db); 
-    $('#issue-text').val(''); 
+    await setDB(db);
+    $('#issue-text').val('');
     renderTenant();
+
+    // Send notification to owner
+    if (typeof NotificationService !== 'undefined' && p.ownerId) {
+        const ownerTokens = await NotificationService.getOwnerTokens(p.ownerId);
+        if (ownerTokens.length > 0) {
+            const notification = NotificationService.NotificationTemplates.maintenanceIssueSubmitted(
+                p.tName,
+                p.name,
+                text
+            );
+            await NotificationService.sendPushNotification(ownerTokens.map(t => t.token), notification);
+        }
+    }
 }
 
 // --- RECEIPT LOGIC ---
