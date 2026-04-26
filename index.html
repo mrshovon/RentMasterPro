@@ -37,10 +37,17 @@
     <script src="https://unpkg.com/lucide@latest"></script>
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-    <script
-      src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js"
-      defer
-    ></script>
+    <!-- PushAlert -->
+    <script type="text/javascript">
+      (function (d, t) {
+        var g = d.createElement(t),
+          s = d.getElementsByTagName(t)[0];
+        g.src =
+          "https://cdn.pushalert.co/integrate_6145a125186684688c9d6d90e595876d.js";
+        s.parentNode.insertBefore(g, s);
+      })(document, "script");
+    </script>
+    <!-- End PushAlert -->
   </head>
   <body>
     <div class="container">
@@ -351,20 +358,6 @@
       window.firebaseHttpsCallable = httpsCallable;
 
       console.log("Firebase initialized successfully");
-
-      // Initialize OneSignal
-      const oneSignalAppId = "cd0b8a7f-cb31-43ad-9c08-532c5ba85bad"; // OneSignal App ID
-      window.OneSignalDeferred = window.OneSignalDeferred || [];
-      OneSignalDeferred.push(function (OneSignal) {
-        OneSignal.init({
-          appId: oneSignalAppId,
-          notifyButton: {
-            enable: false, // We have our own button
-          },
-          allowLocalhostAsSecureOrigin: true, // For local testing
-        });
-        console.log("OneSignal initialized");
-      });
     </script>
 
     <script src="notifications.js"></script>

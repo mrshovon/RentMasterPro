@@ -1,3 +1,6 @@
+// PushAlert Service Worker Import
+importScripts("https://cdn.pushalert.co/sw-89012_2.js");
+
 const CACHE_NAME = 'rentmaster-pro-v1';
 const urlsToCache = [
   '/',
