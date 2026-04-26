@@ -191,14 +191,11 @@ async function createNewProperty() {
 
     // Send notification to tenant
     if (typeof NotificationService !== 'undefined' && p.tName) {
-        const tenantTokens = await NotificationService.getTenantTokens(p.id);
-        if (tenantTokens.length > 0) {
-            const notification = NotificationService.NotificationTemplates.tenantRegistered(
-                p.name,
-                p.ownerName
-            );
-            await NotificationService.sendPushNotification(tenantTokens.map(t => t.token), notification);
-        }
+        const notification = NotificationService.NotificationTemplates.tenantRegistered(
+            p.name,
+            p.ownerName
+        );
+        await NotificationService.sendPushNotification([p.id], notification);
     }
 }
 
@@ -305,15 +302,12 @@ async function createBillWithDetails(pid) {
 
     // Send notification to tenant
     if (typeof NotificationService !== 'undefined' && p.tName) {
-        const tenantTokens = await NotificationService.getTenantTokens(p.id);
-        if (tenantTokens.length > 0) {
-            const notification = NotificationService.NotificationTemplates.rentBillInitiated(
-                month,
-                totalAmount,
-                p.name
-            );
-            await NotificationService.sendPushNotification(tenantTokens.map(t => t.token), notification);
-        }
+        const notification = NotificationService.NotificationTemplates.rentBillInitiated(
+            month,
+            totalAmount,
+            p.name
+        );
+        await NotificationService.sendPushNotification([p.id], notification);
     }
 }
 
@@ -352,14 +346,11 @@ async function savePaidPayment(pid, bi) {
 
     // Send notification to tenant
     if (typeof NotificationService !== 'undefined' && p.tName) {
-        const tenantTokens = await NotificationService.getTenantTokens(p.id);
-        if (tenantTokens.length > 0) {
-            const notification = NotificationService.NotificationTemplates.rentPaymentConfirmed(
-                p.billing[bi].month,
-                p.billing[bi].amount
-            );
-            await NotificationService.sendPushNotification(tenantTokens.map(t => t.token), notification);
-        }
+        const notification = NotificationService.NotificationTemplates.rentPaymentConfirmed(
+            p.billing[bi].month,
+            p.billing[bi].amount
+        );
+        await NotificationService.sendPushNotification([p.id], notification);
     }
 }
 
@@ -374,11 +365,8 @@ async function fixIssue(id, idx) {
 
     // Send notification to tenant
     if (typeof NotificationService !== 'undefined' && p.tName) {
-        const tenantTokens = await NotificationService.getTenantTokens(p.id);
-        if (tenantTokens.length > 0) {
-            const notification = NotificationService.NotificationTemplates.maintenanceIssueResolved(p.name);
-            await NotificationService.sendPushNotification(tenantTokens.map(t => t.token), notification);
-        }
+        const notification = NotificationService.NotificationTemplates.maintenanceIssueResolved(p.name);
+        await NotificationService.sendPushNotification([p.id], notification);
     }
 }
 
@@ -413,11 +401,8 @@ async function processVacate(id) {
 
     // Send notification to tenant
     if (typeof NotificationService !== 'undefined' && tenantName) {
-        const tenantTokens = await NotificationService.getTenantTokens(p.id);
-        if (tenantTokens.length > 0) {
-            const notification = NotificationService.NotificationTemplates.tenantVacated(propertyName);
-            await NotificationService.sendPushNotification(tenantTokens.map(t => t.token), notification);
-        }
+        const notification = NotificationService.NotificationTemplates.tenantVacated(propertyName);
+        await NotificationService.sendPushNotification([p.id], notification);
     }
 }
 
@@ -480,15 +465,12 @@ async function savePropEdit(id) {
 
     // Send notification to tenant if rent changed
     if (rentChanged && typeof NotificationService !== 'undefined' && p.tName) {
-        const tenantTokens = await NotificationService.getTenantTokens(p.id);
-        if (tenantTokens.length > 0) {
-            const notification = NotificationService.NotificationTemplates.rentChanged(
-                oldRent,
-                newRent,
-                p.name
-            );
-            await NotificationService.sendPushNotification(tenantTokens.map(t => t.token), notification);
-        }
+        const notification = NotificationService.NotificationTemplates.rentChanged(
+            oldRent,
+            newRent,
+            p.name
+        );
+        await NotificationService.sendPushNotification([p.id], notification);
     }
 }
 
@@ -600,15 +582,12 @@ async function tenantNotifyPay(bi) {
 
     // Send notification to owner
     if (typeof NotificationService !== 'undefined' && p.ownerId) {
-        const ownerTokens = await NotificationService.getOwnerTokens(p.ownerId);
-        if (ownerTokens.length > 0) {
-            const notification = NotificationService.NotificationTemplates.rentPaymentSent(
-                p.tName,
-                p.billing[bi].month,
-                p.billing[bi].amount
-            );
-            await NotificationService.sendPushNotification(ownerTokens.map(t => t.token), notification);
-        }
+        const notification = NotificationService.NotificationTemplates.rentPaymentSent(
+            p.tName,
+            p.billing[bi].month,
+            p.billing[bi].amount
+        );
+        await NotificationService.sendPushNotification([p.ownerId], notification);
     }
 }
 
@@ -636,15 +615,12 @@ async function submitIssue() {
 
     // Send notification to owner
     if (typeof NotificationService !== 'undefined' && p.ownerId) {
-        const ownerTokens = await NotificationService.getOwnerTokens(p.ownerId);
-        if (ownerTokens.length > 0) {
-            const notification = NotificationService.NotificationTemplates.maintenanceIssueSubmitted(
-                p.tName,
-                p.name,
-                text
-            );
-            await NotificationService.sendPushNotification(ownerTokens.map(t => t.token), notification);
-        }
+        const notification = NotificationService.NotificationTemplates.maintenanceIssueSubmitted(
+            p.tName,
+            p.name,
+            text
+        );
+        await NotificationService.sendPushNotification([p.ownerId], notification);
     }
 }
 

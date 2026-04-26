@@ -17,6 +17,7 @@ let messagingReadyInterval = setInterval(function() {
 
 /**
  * Request notification permission from user
+ * Uses OneSignal for permission request and subscription
  */
 async function requestNotificationPermission() {
     if (!('Notification' in window)) {
@@ -24,23 +25,46 @@ async function requestNotificationPermission() {
         return false;
     }
 
-    if (Notification.permission === 'granted') {
-        console.log('Notification permission already granted');
-        return true;
-    }
+    try {
+        if (window.OneSignal && window.OneSignalDeferred) {
+            // Request permission via OneSignal
+            const permission = await new Promise((resolve) => {
+                window.OneSignalDeferred.push(function(OneSignal) {
+                    OneSignal.Notifications.requestPermission().then(resolve);
+                });
+            });
 
-    if (Notification.permission !== 'denied') {
-        const permission = await Notification.requestPermission();
-        if (permission === 'granted') {
-            console.log('Notification permission granted');
-            return true;
+            if (permission === 'granted') {
+                console.log('OneSignal permission granted');
+                return true;
+            } else {
+                console.warn('OneSignal permission denied');
+                return false;
+            }
         } else {
-            console.warn('Notification permission denied');
+            // Fallback to browser API
+            if (Notification.permission === 'granted') {
+                console.log('Notification permission already granted');
+                return true;
+            }
+
+            if (Notification.permission !== 'denied') {
+                const permission = await Notification.requestPermission();
+                if (permission === 'granted') {
+                    console.log('Notification permission granted');
+                    return true;
+                } else {
+                    console.warn('Notification permission denied');
+                    return false;
+                }
+            }
+
             return false;
         }
+    } catch (error) {
+        console.error('Error requesting notification permission:', error);
+        return false;
     }
-
-    return false;
 }
 
 /**
@@ -72,49 +96,53 @@ async function getDeviceToken() {
 }
 
 /**
- * Register device token in database
- * @param {string} userId - User ID (owner ID or property ID for tenant)
+ * Register device token in Firebase database and tag user in OneSignal
+ * @param {string} userId - User ID (owner ID or property ID for tenants)
  * @param {string} userType - 'owner' or 'tenant'
  */
 async function registerDeviceToken(userId, userType) {
-    const token = await getDeviceToken();
-    if (!token) {
-        console.warn('No device token to register');
-        return false;
-    }
-
     try {
+        // Tag user in OneSignal
+        if (window.OneSignal && window.OneSignalDeferred) {
+            await new Promise((resolve) => {
+                window.OneSignalDeferred.push(function(OneSignal) {
+                    OneSignal.setExternalUserId(userId).then(resolve);
+                });
+            });
+            console.log('OneSignal external user ID set:', userId);
+
+            // Tag user with user type
+            await new Promise((resolve) => {
+                window.OneSignalDeferred.push(function(OneSignal) {
+                    OneSignal.sendTag('userType', userType).then(resolve);
+                });
+            });
+            console.log('OneSignal tag set:', userType);
+        }
+
+        // Also store in Firebase database for backup
         const db = await getDB();
-        
-        // Initialize deviceTokens array if not exists
         if (!db.deviceTokens) {
             db.deviceTokens = [];
         }
 
-        // Check if token already registered for this user
-        const existingIndex = db.deviceTokens.findIndex(
-            t => t.userId === userId && t.token === token
-        );
+        // Remove old tokens for this user
+        db.deviceTokens = db.deviceTokens.filter(t => t.userId !== userId);
 
-        if (existingIndex === -1) {
-            // Add new token
-            db.deviceTokens.push({
-                userId: userId,
-                userType: userType,
-                token: token,
-                createdAt: new Date().toISOString(),
-                lastUsed: new Date().toISOString()
-            });
-        } else {
-            // Update last used timestamp
-            db.deviceTokens[existingIndex].lastUsed = new Date().toISOString();
-        }
+        // Add new entry (we'll store the OneSignal subscription ID if available)
+        db.deviceTokens.push({
+            userId: userId,
+            userType: userType,
+            oneSignalEnabled: true,
+            createdAt: new Date().toISOString(),
+            lastUsed: new Date().toISOString()
+        });
 
         await setDB(db);
-        console.log('Device token registered successfully');
+        console.log('Device registered for:', userId, userType);
         return true;
     } catch (error) {
-        console.error('Error registering device token:', error);
+        console.error('Error registering device:', error);
         return false;
     }
 }
@@ -157,30 +185,64 @@ async function getTenantTokens(propertyId) {
 }
 
 /**
- * Send push notification to specific tokens
- * Calls Firebase Cloud Function to send actual push notifications
- * @param {Array} tokens - Array of device tokens
+ * Send push notification to specific users
+ * Uses OneSignal to send actual push notifications
+ * @param {Array} userIds - Array of user IDs (owner IDs or property IDs for tenants)
  * @param {Object} notification - Notification object {title, body, data, url}
  */
-async function sendPushNotification(tokens, notification) {
+async function sendPushNotification(userIds, notification) {
     try {
-        // Call Firebase Cloud Function to send notification
-        const functions = window.firebaseFunctions;
-        if (!functions) {
-            console.warn('Firebase Functions not initialized, storing in database instead');
-            return await storeNotificationInDatabase(tokens, notification);
+        // Use OneSignal to send notification
+        if (window.OneSignal && window.OneSignalDeferred) {
+            // Wait for OneSignal to be ready
+            await new Promise(resolve => {
+                if (window.OneSignal.isPushNotificationsEnabled()) {
+                    resolve();
+                } else {
+                    window.OneSignalDeferred.push(function(OneSignal) {
+                        OneSignal.isPushNotificationsEnabled().then(resolve);
+                    });
+                }
+            });
+
+            // Send notification to users by their tags
+            // We tag users with their user ID when they enable notifications
+            const contents = {
+                en: notification.body
+            };
+
+            const headings = {
+                en: notification.title
+            };
+
+            // Send to each user
+            for (const userId of userIds) {
+                await window.OneSignalDeferred.push(async function(OneSignal) {
+                    try {
+                        await OneSignal.sendNotification({
+                            contents: contents,
+                            headings: headings,
+                            include_external_user_ids: [userId],
+                            data: notification.data || {},
+                            url: notification.url || window.location.href
+                        });
+                        console.log('OneSignal notification sent to user:', userId);
+                    } catch (error) {
+                        console.error('OneSignal send error:', error);
+                    }
+                });
+            }
+
+            return true;
+        } else {
+            console.warn('OneSignal not initialized, storing in database instead');
+            return await storeNotificationInDatabase(userIds, notification);
         }
-
-        const sendNotification = functions.httpsCallable('sendNotification');
-        const result = await sendNotification({ tokens, notification });
-
-        console.log('Notification sent via Cloud Function:', result.data);
-        return true;
     } catch (error) {
-        console.error('Error sending notification via Cloud Function:', error);
-        // Fallback to database storage if Cloud Function fails
+        console.error('Error sending notification via OneSignal:', error);
+        // Fallback to database storage if OneSignal fails
         console.log('Falling back to database storage');
-        return await storeNotificationInDatabase(tokens, notification);
+        return await storeNotificationInDatabase(userIds, notification);
     }
 }
 
