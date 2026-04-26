@@ -193,20 +193,8 @@ async function getTenantTokens(propertyId) {
 async function sendPushNotification(userIds, notification) {
     try {
         // Use OneSignal to send notification
-        if (window.OneSignal && window.OneSignalDeferred) {
-            // Wait for OneSignal to be ready
-            await new Promise(resolve => {
-                if (window.OneSignal.isPushNotificationsEnabled()) {
-                    resolve();
-                } else {
-                    window.OneSignalDeferred.push(function(OneSignal) {
-                        OneSignal.isPushNotificationsEnabled().then(resolve);
-                    });
-                }
-            });
-
-            // Send notification to users by their tags
-            // We tag users with their user ID when they enable notifications
+        if (window.OneSignalDeferred) {
+            // Send notification to users by their external user IDs
             const contents = {
                 en: notification.body
             };
