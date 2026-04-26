@@ -170,19 +170,44 @@ async function getTenantTokens(propertyId) {
 
 /**
  * Send push notification to all subscribers
- * Note: PushAlert API has CORS restrictions from GitHub Pages
- * Notifications are stored in database. Send manually from PushAlert dashboard.
+ * Uses PushAlert REST API free tier (sends to all subscribers)
  * @param {Array} userIds - Array of user IDs (for record-keeping only)
  * @param {Object} notification - Notification object {title, body, data, url}
  */
 async function sendPushNotification(userIds, notification) {
     try {
-        // Store notification in database for record-keeping
-        console.log('Notification stored in database (send manually from PushAlert dashboard):', notification);
-        return await storeNotificationInDatabase(userIds, notification);
+        const pushAlertApiKey = 'f597dda938deaf66cef63486a98dee93';
+
+        // Send notification to all subscribers (free tier)
+        const response = await fetch('https://api.pushalert.co/rest/v1/send', {
+            method: 'POST',
+            headers: {
+                'Authorization': `api_key=${pushAlertApiKey}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                title: notification.title,
+                message: notification.body,
+                url: notification.url || window.location.href
+            })
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+            console.log('PushAlert notification sent to all subscribers:', result);
+            // Store in database for record-keeping
+            await storeNotificationInDatabase(userIds, notification);
+            return true;
+        } else {
+            console.error('PushAlert API error:', result);
+            // Fallback to database storage
+            return await storeNotificationInDatabase(userIds, notification);
+        }
     } catch (error) {
-        console.error('Error storing notification:', error);
-        return false;
+        console.error('Error sending notification via PushAlert API:', error);
+        // Fallback to database storage if API fails
+        return await storeNotificationInDatabase(userIds, notification);
     }
 }
 
