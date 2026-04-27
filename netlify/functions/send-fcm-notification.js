@@ -8,9 +8,10 @@ console.log('Private key starts with:', privateKey ? privateKey.substring(0, 50)
 console.log('Has newlines:', privateKey ? privateKey.includes('\n') : 'undefined');
 
 if (privateKey && !privateKey.includes('\n')) {
-  // If no actual newlines, try to replace escaped ones
-  privateKey = privateKey.replace(/\\n/g, '\n');
-  console.log('After replace - has newlines:', privateKey.includes('\n'));
+  // Netlify may store multiline as single line with spaces
+  // Replace space-separated lines with actual newlines
+  privateKey = privateKey.replace(/ /g, '\n');
+  console.log('After space replace - has newlines:', privateKey.includes('\n'));
 }
 
 const serviceAccount = {
