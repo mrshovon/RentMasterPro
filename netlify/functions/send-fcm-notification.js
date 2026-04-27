@@ -1,4 +1,27 @@
-const https = require('https');
+const admin = require('firebase-admin');
+
+// Initialize Firebase Admin with service account from environment variable
+const serviceAccount = {
+  "type": "service_account",
+  "project_id": "rentmasterpro-45672",
+  "private_key_id": process.env.FIREBASE_PRIVATE_KEY_ID,
+  "private_key": process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n'),
+  "client_email": "firebase-adminsdk-fbsvc@rentmasterpro-45672.iam.gserviceaccount.com",
+  "client_id": "114194030969990893008",
+  "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+  "token_uri": "https://oauth2.googleapis.com/token",
+  "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+  "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/firebase-adminsdk-fbsvc%40rentmasterpro-45672.iam.gserviceaccount.com",
+  "universe_domain": "googleapis.com"
+};
+
+// Initialize Firebase Admin
+if (!admin.apps.length) {
+  admin.initializeApp({
+    credential: admin.credential.cert(serviceAccount),
+    projectId: 'rentmasterpro-45672'
+  });
+}
 
 exports.handler = async (event, context) => {
   // Only allow POST requests
@@ -14,76 +37,30 @@ exports.handler = async (event, context) => {
 
     console.log('Incoming request - tokens:', tokens.length, 'notification:', notification);
 
-    // Firebase FCM API endpoint
-    const fcmApiKey = 'BOie5s_MUJ-gWc2HLWxUN5cgdDXrQ-4XX4Qffo41KBIM6gSmoYKzLVoWFUFrs5XSaG4D9upsf2VXCwYmDi27eII';
-    const projectId = 'rentmasterpro-97e04'; // Your Firebase project ID
-
-    const postData = JSON.stringify({
-      message: {
-        tokens: tokens,
-        notification: notification,
-        data: data || {}
-      }
-    });
-
-    const options = {
-      hostname: 'fcm.googleapis.com',
-      port: 443,
-      path: `/v1/projects/${projectId}/messages:send`,
-      method: 'POST',
-      headers: {
-        'Authorization': `key=${fcmApiKey}`,
-        'Content-Type': 'application/json',
-        'Content-Length': Buffer.byteLength(postData)
-      }
+    // Send message using Firebase Admin SDK
+    const message = {
+      notification: notification,
+      data: data || {},
+      tokens: tokens
     };
 
-    return new Promise((resolve, reject) => {
-      const req = https.request(options, (res) => {
-        let responseData = '';
+    const response = await admin.messaging().sendMulticast(message);
 
-        res.on('data', (chunk) => {
-          responseData += chunk;
-        });
+    console.log('FCM response - success:', response.successCount, 'failure:', response.failureCount);
 
-        res.on('end', () => {
-          console.log('FCM response status:', res.statusCode);
-          console.log('FCM response body:', responseData);
+    if (response.failureCount > 0) {
+      console.log('Failed tokens:', response.responses.filter(r => !r.success));
+    }
 
-          try {
-            const result = JSON.parse(responseData);
-            if (res.statusCode === 200) {
-              resolve({
-                statusCode: 200,
-                body: JSON.stringify({ success: true, result })
-              });
-            } else {
-              resolve({
-                statusCode: res.statusCode,
-                body: JSON.stringify({ success: false, error: result })
-              });
-            }
-          } catch (error) {
-            console.log('Parse error:', error);
-            resolve({
-              statusCode: 500,
-              body: JSON.stringify({ success: false, error: 'Parse error' })
-            });
-          }
-        });
-      });
-
-      req.on('error', (error) => {
-        console.log('Request error:', error);
-        resolve({
-          statusCode: 500,
-          body: JSON.stringify({ success: false, error: error.message })
-        });
-      });
-
-      req.write(postData);
-      req.end();
-    });
+    return {
+      statusCode: 200,
+      body: JSON.stringify({
+        success: true,
+        successCount: response.successCount,
+        failureCount: response.failureCount,
+        responses: response.responses
+      })
+    };
   } catch (error) {
     console.log('Handler error:', error);
     return {
