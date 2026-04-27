@@ -40,6 +40,9 @@ exports.handler = async (event, context) => {
         });
 
         res.on('end', () => {
+          console.log('PushAlert response status:', res.statusCode);
+          console.log('PushAlert response body:', data);
+
           try {
             const result = JSON.parse(data);
             if (res.statusCode === 200 && result.success) {
@@ -50,19 +53,21 @@ exports.handler = async (event, context) => {
             } else {
               resolve({
                 statusCode: res.statusCode,
-                body: JSON.stringify({ success: false, error: result })
+                body: JSON.stringify({ success: false, error: result, rawResponse: data })
               });
             }
           } catch (error) {
+            console.log('Parse error:', error);
             resolve({
               statusCode: 500,
-              body: JSON.stringify({ success: false, error: 'Parse error' })
+              body: JSON.stringify({ success: false, error: 'Parse error', rawResponse: data })
             });
           }
         });
       });
 
       req.on('error', (error) => {
+        console.log('Request error:', error);
         resolve({
           statusCode: 500,
           body: JSON.stringify({ success: false, error: error.message })
@@ -73,6 +78,7 @@ exports.handler = async (event, context) => {
       req.end();
     });
   } catch (error) {
+    console.log('Handler error:', error);
     return {
       statusCode: 500,
       body: JSON.stringify({ success: false, error: error.message })

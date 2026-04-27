@@ -80,30 +80,13 @@ async function getDeviceToken() {
 }
 
 /**
- * Register device in Firebase database and add custom attributes to PushAlert
+ * Register device in Firebase database for record-keeping
+ * PushAlert handles device subscription automatically
  * @param {string} userId - User ID (owner ID or property ID for tenants)
  * @param {string} userType - 'owner' or 'tenant'
  */
 async function registerDeviceToken(userId, userType) {
     try {
-        const pushAlertApiKey = 'f597dda938deaf66cef63486a98dee93';
-
-        // Add custom attributes to PushAlert subscriber
-        // This allows us to target specific users
-        await fetch('https://api.pushalert.co/rest/v1/attribute/put', {
-            method: 'POST',
-            headers: {
-                'Authorization': `api_key=${pushAlertApiKey}`,
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                userId: userId,
-                userType: userType
-            })
-        });
-
-        console.log('PushAlert attributes set for:', userId, userType);
-
         // Store in Firebase database for record-keeping
         const db = await getDB();
         if (!db.deviceTokens) {
