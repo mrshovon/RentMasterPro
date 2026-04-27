@@ -1,29 +1,4 @@
-const admin = require('firebase-admin');
-
-// Initialize Firebase Admin with service account from environment variable
-// Use base64 encoded service account JSON to avoid newline issues
-let serviceAccount;
-try {
-  const serviceAccountBase64 = process.env.FIREBASE_SERVICE_ACCOUNT;
-  if (serviceAccountBase64) {
-    const serviceAccountJson = Buffer.from(serviceAccountBase64, 'base64').toString('utf8');
-    serviceAccount = JSON.parse(serviceAccountJson);
-    console.log('Service account loaded from base64 environment variable');
-  } else {
-    throw new Error('FIREBASE_SERVICE_ACCOUNT environment variable not set');
-  }
-} catch (error) {
-  console.error('Error loading service account:', error);
-  throw error;
-}
-
-// Initialize Firebase Admin
-if (!admin.apps.length) {
-  admin.initializeApp({
-    credential: admin.credential.cert(serviceAccount),
-    projectId: 'rentmasterpro-45672'
-  });
-}
+const https = require('https');
 
 exports.handler = async (event, context) => {
   // Only allow POST requests
@@ -39,30 +14,56 @@ exports.handler = async (event, context) => {
 
     console.log('Incoming request - tokens:', tokens.length, 'notification:', notification);
 
-    // Send message using Firebase Admin SDK
-    const message = {
-      notification: notification,
-      data: data || {},
-      tokens: tokens
-    };
-
-    const response = await admin.messaging().sendMulticast(message);
-
-    console.log('FCM response - success:', response.successCount, 'failure:', response.failureCount);
-
-    if (response.failureCount > 0) {
-      console.log('Failed tokens:', response.responses.filter(r => !r.success));
+    // Firebase Legacy API endpoint
+    const fcmServerKey = process.env.FCM_SERVER_KEY;
+    if (!fcmServerKey) {
+      throw new Error('FCM_SERVER_KEY environment variable not set');
     }
 
-    return {
-      statusCode: 200,
-      body: JSON.stringify({
-        success: true,
-        successCount: response.successCount,
-        failureCount: response.failureCount,
-        responses: response.responses
-      })
+    const postData = JSON.stringify({
+      registration_ids: tokens,
+      notification: notification,
+      data: data || {}
+    });
+
+    const options = {
+      hostname: 'fcm.googleapis.com',
+      port: 443,
+      path: '/fcm/send',
+      method: 'POST',
+      headers: {
+        'Authorization': `key=${fcmServerKey}`,
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(postData)
+      }
     };
+
+    return new Promise((resolve, reject) => {
+      const req = https.request(options, (res) => {
+        let responseData = '';
+        res.on('data', chunk => { responseData += chunk; });
+        res.on('end', () => {
+          console.log('FCM response status:', res.statusCode);
+          console.log('FCM response body:', responseData);
+          try {
+            const result = JSON.parse(responseData);
+            if (res.statusCode === 200) {
+              resolve({ statusCode: 200, body: JSON.stringify({ success: true, result }) });
+            } else {
+              resolve({ statusCode: res.statusCode, body: JSON.stringify({ success: false, error: result }) });
+            }
+          } catch (error) {
+            resolve({ statusCode: 500, body: JSON.stringify({ success: false, error: 'Parse error' }) });
+          }
+        });
+      });
+      req.on('error', error => {
+        console.log('Request error:', error);
+        resolve({ statusCode: 500, body: JSON.stringify({ success: false, error: error.message }) });
+      });
+      req.write(postData);
+      req.end();
+    });
   } catch (error) {
     console.log('Handler error:', error);
     return {
