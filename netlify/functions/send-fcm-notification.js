@@ -14,25 +14,35 @@ exports.handler = async (event, context) => {
 
     console.log('Incoming request - tokens:', tokens.length, 'notification:', notification);
 
-    // Firebase Legacy API endpoint
-    const fcmServerKey = process.env.FCM_SERVER_KEY;
-    if (!fcmServerKey) {
-      throw new Error('FCM_SERVER_KEY environment variable not set');
+    // Get access token using service account
+    const serviceAccountJson = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
+    if (!serviceAccountJson) {
+      throw new Error('FIREBASE_SERVICE_ACCOUNT_JSON environment variable not set');
     }
 
-    const postData = JSON.stringify({
-      registration_ids: tokens,
-      notification: notification,
-      data: data || {}
-    });
+    const serviceAccount = JSON.parse(serviceAccountJson);
+
+    // Get OAuth token
+    const accessToken = await getAccessToken(serviceAccount);
+
+    // Send message using FCM V1 API
+    const message = {
+      message: {
+        token: tokens[0], // V1 API sends to one token at a time
+        notification: notification,
+        data: data || {}
+      }
+    };
+
+    const postData = JSON.stringify(message);
 
     const options = {
       hostname: 'fcm.googleapis.com',
       port: 443,
-      path: '/fcm/send',
+      path: `/v1/projects/${serviceAccount.project_id}/messages:send`,
       method: 'POST',
       headers: {
-        'Authorization': `key=${fcmServerKey}`,
+        'Authorization': `Bearer ${accessToken}`,
         'Content-Type': 'application/json',
         'Content-Length': Buffer.byteLength(postData)
       }
@@ -72,3 +82,77 @@ exports.handler = async (event, context) => {
     };
   }
 };
+
+async function getAccessToken(serviceAccount) {
+  const jwt = createJWT(serviceAccount);
+  
+  const postData = JSON.stringify({
+    grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+    assertion: jwt
+  });
+
+  const options = {
+    hostname: 'oauth2.googleapis.com',
+    port: 443,
+    path: '/token',
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Content-Length': Buffer.byteLength(postData)
+    }
+  };
+
+  return new Promise((resolve, reject) => {
+    const req = https.request(options, (res) => {
+      let responseData = '';
+      res.on('data', chunk => { responseData += chunk; });
+      res.on('end', () => {
+        try {
+          const result = JSON.parse(responseData);
+          resolve(result.access_token);
+        } catch (error) {
+          reject(error);
+        }
+      });
+    });
+    req.on('error', reject);
+    req.write(postData);
+    req.end();
+  });
+}
+
+function createJWT(serviceAccount) {
+  const header = { alg: 'RS256', typ: 'JWT' };
+  const now = Math.floor(Date.now() / 1000);
+  const payload = {
+    iss: serviceAccount.client_email,
+    scope: 'https://www.googleapis.com/auth/firebase.messaging',
+    aud: 'https://oauth2.googleapis.com/token',
+    iat: now,
+    exp: now + 3600
+  };
+
+  const headerBase64 = base64UrlEncode(JSON.stringify(header));
+  const payloadBase64 = base64UrlEncode(JSON.stringify(payload));
+  const signature = signRS256(headerBase64 + '.' + payloadBase64, serviceAccount.private_key);
+
+  return headerBase64 + '.' + payloadBase64 + '.' + signature;
+}
+
+function base64UrlEncode(str) {
+  return Buffer.from(str).toString('base64')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=/g, '');
+}
+
+function signRS256(data, privateKey) {
+  const crypto = require('crypto');
+  const sign = crypto.createSign('RSA-SHA256');
+  sign.update(data);
+  sign.end();
+  return sign.sign(privateKey, 'base64')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=/g, '');
+}
