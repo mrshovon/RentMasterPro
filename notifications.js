@@ -152,30 +152,33 @@ async function getTenantTokens(propertyId) {
 }
 
 /**
- * Send push notification to all subscribers
- * Uses Netlify function to call PushAlert API (avoids CORS issues)
- * @param {Array} userIds - Array of user IDs (for record-keeping only)
+ * Send push notification to specific users
+ * Uses Netlify function to call Firebase FCM API
+ * @param {Array} userIds - Array of user IDs (device tokens)
  * @param {Object} notification - Notification object {title, body, data, url}
  */
 async function sendPushNotification(userIds, notification) {
     try {
         // Send notification via Netlify function
-        const response = await fetch('/.netlify/functions/send-notification', {
+        const response = await fetch('/.netlify/functions/send-fcm-notification', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify({
-                title: notification.title,
-                message: notification.body,
-                url: notification.url || window.location.href
+                tokens: userIds,
+                notification: {
+                    title: notification.title,
+                    body: notification.body
+                },
+                data: notification.data || {}
             })
         });
 
         const result = await response.json();
 
         if (result.success) {
-            console.log('PushAlert notification sent via Netlify function:', result);
+            console.log('FCM notification sent via Netlify function:', result);
             // Store in database for record-keeping
             await storeNotificationInDatabase(userIds, notification);
             return true;
