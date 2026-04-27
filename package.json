@@ -1,0 +1,9 @@
+{
+  "name": "rentmaster-pro",
+  "version": "1.0.0",
+  "description": "RentMaster Pro - Unified Rental Property Management System",
+  "main": "index.html",
+  "dependencies": {
+    "firebase-admin": "^12.0.0"
+  }
+}
