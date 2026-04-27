@@ -10,17 +10,22 @@ exports.handler = async (event, context) => {
   }
 
   try {
+    console.log('Incoming request body:', event.body);
     const { title, message, body, url } = JSON.parse(event.body);
     const pushAlertApiKey = 'f597dda938deaf66cef63486a98dee93';
 
     // Use 'body' as fallback for 'message' field
     const notificationMessage = message || body;
 
+    console.log('Parsed data - title:', title, 'message:', notificationMessage, 'url:', url);
+
     const postData = JSON.stringify({
       title: title,
       message: notificationMessage,
       url: url || 'https://idyllic-lollipop-8131e9.netlify.app/'
     });
+
+    console.log('Sending to PushAlert:', postData);
 
     const options = {
       hostname: 'api.pushalert.co',
