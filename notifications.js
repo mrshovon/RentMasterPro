@@ -170,19 +170,16 @@ async function getTenantTokens(propertyId) {
 
 /**
  * Send push notification to all subscribers
- * Uses PushAlert REST API free tier (sends to all subscribers)
+ * Uses Netlify function to call PushAlert API (avoids CORS issues)
  * @param {Array} userIds - Array of user IDs (for record-keeping only)
  * @param {Object} notification - Notification object {title, body, data, url}
  */
 async function sendPushNotification(userIds, notification) {
     try {
-        const pushAlertApiKey = 'f597dda938deaf66cef63486a98dee93';
-
-        // Send notification to all subscribers (free tier)
-        const response = await fetch('https://api.pushalert.co/rest/v1/send', {
+        // Send notification via Netlify function
+        const response = await fetch('/.netlify/functions/send-notification', {
             method: 'POST',
             headers: {
-                'Authorization': `api_key=${pushAlertApiKey}`,
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify({
@@ -195,18 +192,18 @@ async function sendPushNotification(userIds, notification) {
         const result = await response.json();
 
         if (result.success) {
-            console.log('PushAlert notification sent to all subscribers:', result);
+            console.log('PushAlert notification sent via Netlify function:', result);
             // Store in database for record-keeping
             await storeNotificationInDatabase(userIds, notification);
             return true;
         } else {
-            console.error('PushAlert API error:', result);
+            console.error('Netlify function error:', result);
             // Fallback to database storage
             return await storeNotificationInDatabase(userIds, notification);
         }
     } catch (error) {
-        console.error('Error sending notification via PushAlert API:', error);
-        // Fallback to database storage if API fails
+        console.error('Error sending notification via Netlify function:', error);
+        // Fallback to database storage if function fails
         return await storeNotificationInDatabase(userIds, notification);
     }
 }
