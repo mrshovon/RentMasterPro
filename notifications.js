@@ -81,13 +81,39 @@ async function getDeviceToken() {
 
 /**
  * Register device in Firebase database for record-keeping
- * PushAlert handles device subscription automatically
+ * Get actual FCM token from Firebase Messaging SDK
  * @param {string} userId - User ID (owner ID or property ID for tenants)
  * @param {string} userType - 'owner' or 'tenant'
  */
 async function registerDeviceToken(userId, userType) {
     try {
-        // Store in Firebase database for record-keeping
+        // Get FCM token from Firebase Messaging SDK
+        const messaging = window.firebase?.messaging;
+        if (!messaging) {
+            console.error('Firebase Messaging not initialized');
+            return false;
+        }
+
+        // Request permission and get token
+        const permission = await Notification.requestPermission();
+        if (permission !== 'granted') {
+            console.log('Notification permission denied');
+            return false;
+        }
+
+        // Get FCM token
+        const token = await window.firebaseGetToken(messaging, {
+            vapidKey: 'BOie5s_MUJ-gWc2HLWxUN5cgdDXrQ-4XX4Qffo41KBIM6gSmoYKzLVoWFUFrs5XSaG4D9upsf2VXCwYmDi27eII'
+        });
+
+        if (!token) {
+            console.error('Failed to get FCM token');
+            return false;
+        }
+
+        console.log('FCM Token obtained:', token.substring(0, 20) + '...');
+
+        // Store in Firebase database
         const db = await getDB();
         if (!db.deviceTokens) {
             db.deviceTokens = [];
@@ -96,11 +122,11 @@ async function registerDeviceToken(userId, userType) {
         // Remove old entries for this user
         db.deviceTokens = db.deviceTokens.filter(t => t.userId !== userId);
 
-        // Add new entry
+        // Add new entry with actual FCM token
         db.deviceTokens.push({
             userId: userId,
             userType: userType,
-            pushAlertEnabled: true,
+            fcmToken: token,
             createdAt: new Date().toISOString(),
             lastUsed: new Date().toISOString()
         });
@@ -126,9 +152,12 @@ async function getUserTokens(userId, userType) {
             return [];
         }
 
-        return db.deviceTokens.filter(
+        const tokens = db.deviceTokens.filter(
             t => t.userId === userId && t.userType === userType
         );
+
+        // Return actual FCM tokens
+        return tokens.map(t => t.fcmToken).filter(t => t);
     } catch (error) {
         console.error('Error getting user tokens:', error);
         return [];
