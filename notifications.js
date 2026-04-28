@@ -62,7 +62,7 @@ async function getDeviceToken() {
 
     try {
         const currentToken = await window.firebaseGetToken(messaging, {
-            vapidKey: 'BOie5s_MUJ-gWc2HLWxUN5cgdDXrQ-4XX4Qffo41KBIM6gSmoYKzLVoWFUFrs5XSaG4D9upsf2VXCwYmDi27eII'
+            vapidKey: window.appConfig.fcm.vapidKey
         });
 
         if (currentToken) {
@@ -103,7 +103,7 @@ async function registerDeviceToken(userId, userType) {
 
         // Get FCM token
         const token = await window.firebaseGetToken(messaging, {
-            vapidKey: 'BOie5s_MUJ-gWc2HLWxUN5cgdDXrQ-4XX4Qffo41KBIM6gSmoYKzLVoWFUFrs5XSaG4D9upsf2VXCwYmDi27eII'
+            vapidKey: window.appConfig.fcm.vapidKey
         });
 
         if (!token) {

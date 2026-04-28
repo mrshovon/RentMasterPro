@@ -1,15 +1,16 @@
 importScripts('https://www.gstatic.com/firebasejs/10.7.0/firebase-app.js');
 importScripts('https://www.gstatic.com/firebasejs/10.7.0/firebase-messaging.js');
 
+// Firebase config - must be replaced with actual values during build
 const firebaseConfig = {
-  apiKey: "AIzaSyDTyvem4AV1deCh5WzG20NzR0fOBPQ2qjc",
-  authDomain: "rentmasterpro-45672.firebaseapp.com",
-  databaseURL: "https://rentmasterpro-45672-default-rtdb.asia-southeast1.firebasedatabase.app",
-  projectId: "rentmasterpro-45672",
-  storageBucket: "rentmasterpro-45672.firebasestorage.app",
-  messagingSenderId: "970817206915",
-  appId: "1:970817206915:web:10ffa2182b9f7ac7ef39b6",
-  measurementId: "G-QRF9V9LLLY"
+  apiKey: "${FIREBASE_API_KEY}",
+  authDomain: "${FIREBASE_AUTH_DOMAIN}",
+  databaseURL: "${FIREBASE_DATABASE_URL}",
+  projectId: "${FIREBASE_PROJECT_ID}",
+  storageBucket: "${FIREBASE_STORAGE_BUCKET}",
+  messagingSenderId: "${FIREBASE_MESSAGING_SENDER_ID}",
+  appId: "${FIREBASE_APP_ID}",
+  measurementId: "${FIREBASE_MEASUREMENT_ID}"
 };
 
 firebase.initializeApp(firebaseConfig);
