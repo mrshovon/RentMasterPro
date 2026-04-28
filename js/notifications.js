@@ -101,6 +101,16 @@ async function registerDeviceToken(userId, userType) {
             return false;
         }
 
+        // Check if running locally (service workers don't work well with HTTP)
+        const isLocal = window.location.hostname === '127.0.0.1' ||
+                        window.location.hostname === 'localhost' ||
+                        window.location.protocol === 'file:';
+
+        if (isLocal) {
+            console.log('Running locally - skipping FCM token registration (service workers require HTTPS)');
+            return false;
+        }
+
         // Get FCM token with service worker registration
         let swRegistration;
         try {
@@ -191,14 +201,24 @@ async function getTenantTokens(propertyId) {
 
 /**
  * Send push notification to specific users
- * Uses Netlify function to call Firebase FCM API
+ * Uses Vercel API function to call Firebase FCM API
  * @param {Array} userIds - Array of user IDs (device tokens)
  * @param {Object} notification - Notification object {title, body, data, url}
  */
 async function sendPushNotification(userIds, notification) {
     try {
-        // Send notification via Netlify function
-        const response = await fetch('/.netlify/functions/send-fcm-notification', {
+        // Check if running locally (no Vercel API available)
+        const isLocal = window.location.hostname === '127.0.0.1' ||
+                        window.location.hostname === 'localhost' ||
+                        window.location.protocol === 'file:';
+
+        if (isLocal) {
+            console.log('Running locally - skipping Vercel API, storing notification in database only');
+            return await storeNotificationInDatabase(userIds, notification);
+        }
+
+        // Send notification via Vercel API
+        const response = await fetch('/api/send-fcm-notification', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'

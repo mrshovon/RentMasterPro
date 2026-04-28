@@ -1,16 +1,13 @@
 const https = require('https');
 
-exports.handler = async (event, context) => {
+export default async function handler(req, res) {
   // Only allow POST requests
-  if (event.httpMethod !== 'POST') {
-    return {
-      statusCode: 405,
-      body: JSON.stringify({ error: 'Method not allowed' })
-    };
+  if (req.method !== 'POST') {
+    return res.status(405).json({ error: 'Method not allowed' });
   }
 
   try {
-    const { tokens, notification, data } = JSON.parse(event.body);
+    const { tokens, notification, data } = req.body;
 
     console.log('Incoming request - tokens:', tokens.length, 'notification:', notification);
 
@@ -48,7 +45,7 @@ exports.handler = async (event, context) => {
       }
     };
 
-    return new Promise((resolve, reject) => {
+    const fcmResponse = await new Promise((resolve, reject) => {
       const req = https.request(options, (res) => {
         let responseData = '';
         res.on('data', chunk => { responseData += chunk; });
@@ -57,31 +54,30 @@ exports.handler = async (event, context) => {
           console.log('FCM response body:', responseData);
           try {
             const result = JSON.parse(responseData);
-            if (res.statusCode === 200) {
-              resolve({ statusCode: 200, body: JSON.stringify({ success: true, result }) });
-            } else {
-              resolve({ statusCode: res.statusCode, body: JSON.stringify({ success: false, error: result }) });
-            }
+            resolve({ statusCode: res.statusCode, body: result });
           } catch (error) {
-            resolve({ statusCode: 500, body: JSON.stringify({ success: false, error: 'Parse error' }) });
+            resolve({ statusCode: 500, body: { error: 'Parse error' } });
           }
         });
       });
       req.on('error', error => {
         console.log('Request error:', error);
-        resolve({ statusCode: 500, body: JSON.stringify({ success: false, error: error.message }) });
+        resolve({ statusCode: 500, body: { error: error.message } });
       });
       req.write(postData);
       req.end();
     });
+
+    if (fcmResponse.statusCode === 200) {
+      return res.status(200).json({ success: true, result: fcmResponse.body });
+    } else {
+      return res.status(fcmResponse.statusCode).json({ success: false, error: fcmResponse.body });
+    }
   } catch (error) {
     console.log('Handler error:', error);
-    return {
-      statusCode: 500,
-      body: JSON.stringify({ success: false, error: error.message })
-    };
+    return res.status(500).json({ success: false, error: error.message });
   }
-};
+}
 
 async function getAccessToken(serviceAccount) {
   const jwt = createJWT(serviceAccount);
