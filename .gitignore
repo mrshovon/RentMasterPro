@@ -5,6 +5,7 @@
 
 # Config files with sensitive data
 firebase-config.js
+config.js
 
 # OS files
 .DS_Store

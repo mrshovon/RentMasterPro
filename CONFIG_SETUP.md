@@ -1,12 +1,28 @@
 # Configuration Setup Guide
 
-This application uses environment variables to store sensitive information securely. The actual values are not committed to git.
+This application uses environment variables to store sensitive information securely. The actual values are not committed to git and are injected directly into the HTML during build.
 
-## Files
+## File Structure
 
-- **.env.example** - Template with placeholder values (committed to git)
-- **.env** - Your actual environment variables (NOT committed to git)
-- **config.js** - Configuration file that reads from environment variables (NOT committed to git)
+```
+RentMasterPro/
+├── assets/           # Images and static assets
+│   ├── icon-192x192.png
+│   └── icon-512x512.png
+├── css/              # Stylesheets
+│   └── styles.css
+├── js/               # JavaScript files
+│   ├── app.js
+│   ├── notifications.js
+│   ├── sw.js
+│   └── firebase-messaging-sw.js
+├── netlify/          # Netlify functions
+│   └── functions/
+│       └── send-fcm-notification.js
+├── .env.example      # Environment variable template (committed)
+├── .gitignore        # Blocks sensitive files
+└── index.html        # Main HTML (config injected here)
+```
 
 ## Setup Instructions
 
@@ -28,16 +44,18 @@ This application uses environment variables to store sensitive information secur
    FIREBASE_VAPID_KEY=your_vapid_key
    ```
 
-3. **Netlify will automatically replace the placeholders** in `config.js` and `firebase-messaging-sw.js` during the build process.
+3. **Netlify will automatically replace the placeholders** in `index.html` and `firebase-messaging-sw.js` during the build process.
 
 ### For Local Development
 
 1. **Copy the template file:**
+
    ```bash
    cp .env.example .env
    ```
 
 2. **Edit .env with your actual values:**
+
    ```env
    FIREBASE_API_KEY=AIzaSyDTyvem4AV1deCh5WzG20NzR0fOBPQ2qjc
    FIREBASE_AUTH_DOMAIN=rentmasterpro-45672.firebaseapp.com
@@ -50,32 +68,15 @@ This application uses environment variables to store sensitive information secur
    FIREBASE_VAPID_KEY=BOie5s_MUJ-gWc2HLWxUN5cgdDXrQ-4XX4Qffo41KBIM6gSmoYKzLVoWFUFrs5XSaG4D9upsf2VXCwYmDi27eII
    ```
 
-3. **For local development, you need to manually create config.js:**
-   ```javascript
-   const config = {
-     firebase: {
-       apiKey: "YOUR_API_KEY",
-       authDomain: "YOUR_AUTH_DOMAIN",
-       databaseURL: "YOUR_DATABASE_URL",
-       projectId: "YOUR_PROJECT_ID",
-       storageBucket: "YOUR_STORAGE_BUCKET",
-       messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
-       appId: "YOUR_APP_ID",
-       measurementId: "YOUR_MEASUREMENT_ID"
-     },
-     fcm: {
-       vapidKey: "YOUR_VAPID_KEY"
-     }
-   };
-   window.appConfig = config;
-   ```
+3. **For local development, manually edit index.html** to replace the `${VARIABLE}` placeholders with actual values.
 
 ## Security Notes
 
+- **No config.js file exists** - Configuration is injected directly into HTML
 - **Never commit .env to git** - it contains your actual keys
-- **Never commit config.js to git** - it will contain actual values in production
-- **.gitignore is configured** to prevent these files from being committed
+- **.gitignore is configured** to block sensitive files
 - **Netlify environment variables** are secure and never exposed in the codebase
+- **Firebase client config is public by design** - This is unavoidable for client-side Firebase apps
 
 ## Firebase Service Account (Server-side)
 
@@ -88,20 +89,25 @@ For the Netlify function, you need to set the service account JSON in Netlify:
 ## Troubleshooting
 
 ### Issue: "window.appConfig is undefined"
-**Solution:** Make sure config.js is loaded before other scripts. Check that it exists and is not blocked by .gitignore.
+
+**Solution:** Netlify environment variables not set. Check Netlify dashboard and trigger new deployment.
 
 ### Issue: Environment variables not working on Netlify
-**Solution:** 
+
+**Solution:**
+
 1. Verify environment variables are set in Netlify dashboard
 2. Trigger a new deployment
 3. Check Netlify build logs for errors
 
 ### Issue: Local development not working
-**Solution:** Create config.js manually with your actual values (see step 3 in local development setup).
+
+**Solution:** Manually replace `${VARIABLE}` placeholders in index.html with actual values.
 
 ## Migration from Old Setup
 
 If you have the old `firebase-config.js` file:
-1. Copy the values from it to your .env file
+
+1. Copy the values from it to your Netlify environment variables
 2. Delete firebase-config.js
 3. Follow the setup instructions above
