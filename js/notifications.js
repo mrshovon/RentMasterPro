@@ -130,7 +130,15 @@ async function registerDeviceToken(userId, userType) {
             return false;
         }
 
+        // Validate token format (FCM tokens are typically 100+ characters)
+        if (typeof token !== 'string' || token.length < 50) {
+            console.error('Invalid FCM token format received:', token);
+            console.error('Token length:', token.length);
+            return false;
+        }
+
         console.log('FCM Token obtained:', token.substring(0, 20) + '...');
+        console.log('Token length:', token.length);
 
         // Store in Firebase database
         const db = await getDB();
@@ -301,6 +309,44 @@ async function removeInvalidToken(invalidToken) {
 }
 
 /**
+ * Clear all invalid FCM tokens from database
+ * This should be called to clean up old/bad data
+ */
+async function clearAllInvalidTokens() {
+    try {
+        const db = await getDB();
+        if (!db.deviceTokens) {
+            console.log('No device tokens in database');
+            return 0;
+        }
+
+        const initialCount = db.deviceTokens.length;
+        db.deviceTokens = db.deviceTokens.filter(t => {
+            const token = t.fcmToken;
+            // Valid FCM tokens are 100+ characters
+            if (!token || typeof token !== 'string' || token.length < 50) {
+                console.warn('Removing invalid token:', token);
+                return false;
+            }
+            return true;
+        });
+        const removedCount = initialCount - db.deviceTokens.length;
+
+        if (removedCount > 0) {
+            await setDB(db);
+            console.log(`Cleared ${removedCount} invalid FCM token(s) from database`);
+        } else {
+            console.log('No invalid tokens found');
+        }
+
+        return removedCount;
+    } catch (error) {
+        console.error('Error clearing invalid tokens:', error);
+        return 0;
+    }
+}
+
+/**
  * Store notification in database (fallback method)
  * @param {Array} tokens - Array of device tokens
  * @param {Object} notification - Notification object {title, body, data}
@@ -392,10 +438,13 @@ const NotificationTemplates = {
  * @param {string} userType - 'owner' or 'tenant'
  */
 async function initializeNotifications(userId, userType) {
+    // Clear any invalid tokens from database first
+    await clearAllInvalidTokens();
+
     const permissionGranted = await requestNotificationPermission();
     if (permissionGranted) {
         await registerDeviceToken(userId, userType);
-        
+
         // Listen for token refresh
         if (messaging && !tokenRefreshListener) {
             tokenRefreshListener = window.firebaseOnMessage(messaging, (payload) => {
@@ -404,7 +453,7 @@ async function initializeNotifications(userId, userType) {
                 if (Notification.permission === 'granted') {
                     new Notification(payload.notification?.title || 'RentMaster Pro', {
                         body: payload.notification?.body,
-                        icon: '/icon-192x192.png',
+                        icon: '/assets/icon-192x192.png',
                         data: payload.data
                     });
                 }
