@@ -1,19 +1,20 @@
-const CACHE_NAME = 'rentmaster-pro-v1';
+const CACHE_NAME = 'rentmaster-pro-v2';
 const urlsToCache = [
   '/',
   '/index.html',
-  '/styles.css',
-  '/app.js',
+  '/css/styles.css',
+  '/js/app.js',
+  '/js/notifications.js',
   '/manifest.json',
+  '/assets/icon-192x192.png',
+  '/assets/icon-512x512.png',
   'https://code.jquery.com/jquery-3.6.0.min.js',
   'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js',
   'https://unpkg.com/lucide@latest',
   'https://www.gstatic.com/firebasejs/10.7.0/firebase-app.js',
   'https://www.gstatic.com/firebasejs/10.7.0/firebase-database.js',
-  'https://www.gstatic.com/firebasejs/10.7.0/firebase-messaging.js'
-  // Note: PNG icons will be cached when they exist
-  // '/RentMasterPro/icon-192x192.png',
-  // '/RentMasterPro/icon-512x512.png'
+  'https://www.gstatic.com/firebasejs/10.7.0/firebase-messaging.js',
+  'https://www.gstatic.com/firebasejs/10.7.0/firebase-functions.js'
 ];
 
 // Install event - cache resources
@@ -22,7 +23,11 @@ self.addEventListener('install', event => {
     caches.open(CACHE_NAME)
       .then(cache => {
         console.log('Opened cache');
-        return cache.addAll(urlsToCache);
+        return cache.addAll(urlsToCache).catch(error => {
+          console.log('Cache addAll failed, some resources may not be available:', error);
+          // Continue installation even if some resources fail to cache
+          return Promise.resolve();
+        });
       })
   );
 });
@@ -76,8 +81,8 @@ self.addEventListener('push', event => {
   let notificationData = {
     title: 'RentMaster Pro',
     body: 'You have a new notification',
-    icon: '/icon-192x192.png',
-    badge: '/icon-192x192.png',
+    icon: '/assets/icon-192x192.png',
+    badge: '/assets/icon-192x192.png',
     vibrate: [200, 100, 200],
     data: {
       url: '/'

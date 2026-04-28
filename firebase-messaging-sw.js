@@ -1,5 +1,5 @@
-importScripts('https://www.gstatic.com/firebasejs/10.7.0/firebase-app.js');
-importScripts('https://www.gstatic.com/firebasejs/10.7.0/firebase-messaging.js');
+importScripts('https://cdn.jsdelivr.net/npm/firebase@10.7.0/firebase-app-compat.js');
+importScripts('https://cdn.jsdelivr.net/npm/firebase@10.7.0/firebase-messaging-compat.js');
 
 // Firebase config
 const firebaseConfig = {
@@ -24,7 +24,7 @@ messaging.onBackgroundMessage((payload) => {
   const notificationTitle = payload.notification.title;
   const notificationOptions = {
     body: payload.notification.body,
-    icon: '/icon-192x192.png',
+    icon: '/assets/icon-192x192.png',
     data: payload.data
   };
 
