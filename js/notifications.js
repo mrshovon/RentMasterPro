@@ -175,8 +175,18 @@ async function getUserTokens(userId, userType) {
             t => t.userId === userId && t.userType === userType
         );
 
-        // Return actual FCM tokens
-        return tokens.map(t => t.fcmToken).filter(t => t);
+        // Return actual FCM tokens with validation
+        const validTokens = tokens.map(t => t.fcmToken).filter(t => {
+            // Validate token format (FCM tokens are typically 100+ characters)
+            if (!t || typeof t !== 'string' || t.length < 50) {
+                console.warn('Invalid FCM token detected, skipping:', t);
+                return false;
+            }
+            return true;
+        });
+
+        console.log(`Found ${validTokens.length} valid FCM tokens for ${userType} ${userId}`);
+        return validTokens;
     } catch (error) {
         console.error('Error getting user tokens:', error);
         return [];
@@ -207,6 +217,15 @@ async function getTenantTokens(propertyId) {
  */
 async function sendPushNotification(userIds, notification) {
     try {
+        // Check if we have valid tokens
+        if (!userIds || userIds.length === 0) {
+            console.warn('No valid FCM tokens available, skipping FCM send');
+            return await storeNotificationInDatabase([], notification);
+        }
+
+        console.log(`Attempting to send FCM notification to ${userIds.length} token(s)`);
+        console.log('First token preview:', userIds[0].substring(0, 30) + '...');
+
         // Check if running locally (no Vercel API available)
         const isLocal = window.location.hostname === '127.0.0.1' ||
                         window.location.hostname === 'localhost' ||
@@ -236,19 +255,48 @@ async function sendPushNotification(userIds, notification) {
         const result = await response.json();
 
         if (result.success) {
-            console.log('FCM notification sent via Netlify function:', result);
+            console.log('FCM notification sent via Vercel API:', result);
             // Store in database for record-keeping
             await storeNotificationInDatabase(userIds, notification);
             return true;
         } else {
-            console.error('Netlify function error:', result);
+            console.error('Vercel API error:', result);
+            // If token is invalid, remove it from database
+            if (result.error?.error?.message?.includes('not a valid FCM registration token')) {
+                console.warn('Invalid FCM token detected, removing from database');
+                await removeInvalidToken(userIds[0]);
+            }
             // Fallback to database storage
             return await storeNotificationInDatabase(userIds, notification);
         }
     } catch (error) {
-        console.error('Error sending notification via Netlify function:', error);
+        console.error('Error sending notification via Vercel API:', error);
         // Fallback to database storage if function fails
         return await storeNotificationInDatabase(userIds, notification);
+    }
+}
+
+/**
+ * Remove invalid FCM token from database
+ * @param {string} invalidToken - The invalid FCM token to remove
+ */
+async function removeInvalidToken(invalidToken) {
+    try {
+        const db = await getDB();
+        if (!db.deviceTokens) {
+            return;
+        }
+
+        const initialCount = db.deviceTokens.length;
+        db.deviceTokens = db.deviceTokens.filter(t => t.fcmToken !== invalidToken);
+        const removedCount = initialCount - db.deviceTokens.length;
+
+        if (removedCount > 0) {
+            await setDB(db);
+            console.log(`Removed ${removedCount} invalid FCM token(s) from database`);
+        }
+    } catch (error) {
+        console.error('Error removing invalid token:', error);
     }
 }
 
