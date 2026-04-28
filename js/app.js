@@ -195,7 +195,13 @@ async function createNewProperty() {
             p.name,
             p.ownerName
         );
-        await NotificationService.sendPushNotification([p.id], notification);
+        // Get tenant's FCM tokens using property ID as tenant ID
+        const tenantTokens = await NotificationService.getTenantTokens(p.id);
+        if (tenantTokens.length > 0) {
+            await NotificationService.sendPushNotification(tenantTokens, notification);
+        } else {
+            console.warn('No FCM tokens found for tenant:', p.id);
+        }
     }
 }
 
@@ -307,7 +313,13 @@ async function createBillWithDetails(pid) {
             totalAmount,
             p.name
         );
-        await NotificationService.sendPushNotification([p.id], notification);
+        // Get tenant's FCM tokens using property ID as tenant ID
+        const tenantTokens = await NotificationService.getTenantTokens(p.id);
+        if (tenantTokens.length > 0) {
+            await NotificationService.sendPushNotification(tenantTokens, notification);
+        } else {
+            console.warn('No FCM tokens found for tenant:', p.id);
+        }
     }
 }
 
@@ -350,7 +362,13 @@ async function savePaidPayment(pid, bi) {
             p.billing[bi].month,
             p.billing[bi].amount
         );
-        await NotificationService.sendPushNotification([p.id], notification);
+        // Get tenant's FCM tokens using property ID as tenant ID
+        const tenantTokens = await NotificationService.getTenantTokens(p.id);
+        if (tenantTokens.length > 0) {
+            await NotificationService.sendPushNotification(tenantTokens, notification);
+        } else {
+            console.warn('No FCM tokens found for tenant:', p.id);
+        }
     }
 }
 
@@ -366,7 +384,13 @@ async function fixIssue(id, idx) {
     // Send notification to tenant
     if (typeof NotificationService !== 'undefined' && p.tName) {
         const notification = NotificationService.NotificationTemplates.maintenanceIssueResolved(p.name);
-        await NotificationService.sendPushNotification([p.id], notification);
+        // Get tenant's FCM tokens using property ID as tenant ID
+        const tenantTokens = await NotificationService.getTenantTokens(p.id);
+        if (tenantTokens.length > 0) {
+            await NotificationService.sendPushNotification(tenantTokens, notification);
+        } else {
+            console.warn('No FCM tokens found for tenant:', p.id);
+        }
     }
 }
 
@@ -402,7 +426,13 @@ async function processVacate(id) {
     // Send notification to tenant
     if (typeof NotificationService !== 'undefined' && tenantName) {
         const notification = NotificationService.NotificationTemplates.tenantVacated(propertyName);
-        await NotificationService.sendPushNotification([p.id], notification);
+        // Get tenant's FCM tokens using property ID as tenant ID
+        const tenantTokens = await NotificationService.getTenantTokens(p.id);
+        if (tenantTokens.length > 0) {
+            await NotificationService.sendPushNotification(tenantTokens, notification);
+        } else {
+            console.warn('No FCM tokens found for tenant:', p.id);
+        }
     }
 }
 
@@ -470,7 +500,13 @@ async function savePropEdit(id) {
             newRent,
             p.name
         );
-        await NotificationService.sendPushNotification([p.id], notification);
+        // Get tenant's FCM tokens using property ID as tenant ID
+        const tenantTokens = await NotificationService.getTenantTokens(p.id);
+        if (tenantTokens.length > 0) {
+            await NotificationService.sendPushNotification(tenantTokens, notification);
+        } else {
+            console.warn('No FCM tokens found for tenant:', p.id);
+        }
     }
 }
 
@@ -587,7 +623,13 @@ async function tenantNotifyPay(bi) {
             p.billing[bi].month,
             p.billing[bi].amount
         );
-        await NotificationService.sendPushNotification([p.ownerId], notification);
+        // Get owner's FCM tokens
+        const ownerTokens = await NotificationService.getOwnerTokens(p.ownerId);
+        if (ownerTokens.length > 0) {
+            await NotificationService.sendPushNotification(ownerTokens, notification);
+        } else {
+            console.warn('No FCM tokens found for owner:', p.ownerId);
+        }
     }
 }
 
@@ -620,7 +662,13 @@ async function submitIssue() {
             p.name,
             text
         );
-        await NotificationService.sendPushNotification([p.ownerId], notification);
+        // Get owner's FCM tokens
+        const ownerTokens = await NotificationService.getOwnerTokens(p.ownerId);
+        if (ownerTokens.length > 0) {
+            await NotificationService.sendPushNotification(ownerTokens, notification);
+        } else {
+            console.warn('No FCM tokens found for owner:', p.ownerId);
+        }
     }
 }
 
