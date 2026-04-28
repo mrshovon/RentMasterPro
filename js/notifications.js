@@ -102,9 +102,17 @@ async function registerDeviceToken(userId, userType) {
         }
 
         // Get FCM token with service worker registration
+        let swRegistration;
+        try {
+            swRegistration = await navigator.serviceWorker.register('./firebase-messaging-sw.js');
+        } catch (swError) {
+            console.warn('Service worker registration failed, continuing without FCM:', swError);
+            return false;
+        }
+
         const token = await window.firebaseGetToken(messaging, {
             vapidKey: window.appConfig.fcm.vapidKey,
-            serviceWorkerRegistration: await navigator.serviceWorker.register('./firebase-messaging-sw.js')
+            serviceWorkerRegistration: swRegistration
         });
 
         if (!token) {
