@@ -787,8 +787,8 @@ async function getNoticesForTenant(tenantId, propertyId) {
     if (!db.notices) return [];
 
     return db.notices.filter(notice => {
-        // Notice must be for this tenant or all tenants
-        const tenantMatch = notice.tenantId === null || notice.tenantId === tenantId;
+        // Notice must be for this tenant or all tenants (no tenantId means all tenants)
+        const tenantMatch = !notice.tenantId || notice.tenantId === tenantId;
         return tenantMatch;
     }).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 }
