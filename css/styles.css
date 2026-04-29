@@ -792,3 +792,20 @@ textarea::placeholder {
 .flash-animation {
   animation: flash 2s ease-in-out infinite;
 }
+
+.styled-select {
+  width: 100%;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: white;
+  font-size: 14px;
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: border-color 0.2s;
+}
+
+.styled-select:focus {
+  outline: none;
+  border-color: var(--master);
+}

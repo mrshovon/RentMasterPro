@@ -848,10 +848,13 @@ async function openCreateNoticeModal() {
     let propertyOptions = ownerProperties.map(p => `<option value="${p.id}">${p.name} (${p.tName})</option>`).join('');
 
     $('#modal-body').html(`
-        <h3>Create Notice</h3>
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px">
+            <h3 style="margin:0">Create Notice</h3>
+            <button class="btn" style="background:#e2e8f0; color:#64748b" onclick="$('#modal').hide()">✕</button>
+        </div>
         <div>
             <label><small>Target</small></label>
-            <select id="notice-target-type" onchange="updateNoticeTargetOptions()">
+            <select id="notice-target-type" class="styled-select" onchange="updateNoticeTargetOptions()">
                 <option value="all">All My Properties</option>
                 <option value="property">Specific Property</option>
                 <option value="tenant">Specific Tenant</option>
@@ -859,13 +862,13 @@ async function openCreateNoticeModal() {
         </div>
         <div id="notice-property-select-container" style="display:none">
             <label><small>Property</small></label>
-            <select id="notice-property-select" onchange="updateTenantSelectForNotice()">
+            <select id="notice-property-select" class="styled-select" onchange="updateTenantSelectForNotice()">
                 ${propertyOptions}
             </select>
         </div>
         <div id="notice-tenant-select-container" style="display:none">
             <label><small>Tenant</small></label>
-            <select id="notice-tenant-select">
+            <select id="notice-tenant-select" class="styled-select">
                 <option value="">Select property first</option>
             </select>
         </div>
@@ -941,7 +944,10 @@ async function viewSentNotices() {
     });
 
     $('#modal-body').html(`
-        <h3>Sent Notices</h3>
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px">
+            <h3 style="margin:0">Sent Notices</h3>
+            <button class="btn" style="background:#e2e8f0; color:#64748b" onclick="$('#modal').hide()">✕</button>
+        </div>
         <button class="btn btn-primary" style="margin-bottom:15px" onclick="openCreateNoticeModal()">+ Create Notice</button>
         ${noticesHtml}
     `);
@@ -974,14 +980,16 @@ async function checkUnreadNoticesOnLogin() {
  */
 function showUnreadNoticePopup(notice) {
     $('#modal-body').html(`
-        <h3 style="color:#dc2626">📢 New Notice!</h3>
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px">
+            <h3 style="margin:0; color:#dc2626">📢 New Notice!</h3>
+            <button class="btn" style="background:#e2e8f0; color:#64748b" onclick="$('#modal').hide()">✕</button>
+        </div>
         <div class="property-card" style="background:#fef3c7; border:1px solid #fcd34d">
             <strong>${notice.title}</strong>
             <small style="display:block; color:#666; margin-top:5px">${notice.createdAt}</small>
             <p style="margin-top:10px">${notice.content.substring(0, 150)}${notice.content.length > 150 ? '...' : ''}</p>
         </div>
         <button class="btn btn-primary" onclick="viewFullNotice('${notice.id}')">View Full Notice</button>
-        <button class="btn" onclick="$('#modal').hide()">Close</button>
     `);
     $('#modal').show();
 }
@@ -1015,7 +1023,10 @@ async function openNoticesList() {
     });
 
     $('#modal-body').html(`
-        <h3>Notices</h3>
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px">
+            <h3 style="margin:0">Notices</h3>
+            <button class="btn" style="background:#e2e8f0; color:#64748b" onclick="$('#modal').hide()">✕</button>
+        </div>
         ${noticesHtml}
     `);
     $('#modal').show();
@@ -1036,10 +1047,12 @@ async function viewFullNotice(noticeId) {
     }
 
     $('#modal-body').html(`
-        <h3>${notice.title}</h3>
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px">
+            <h3 style="margin:0">${notice.title}</h3>
+            <button class="btn" style="background:#e2e8f0; color:#64748b" onclick="$('#modal').hide()">✕</button>
+        </div>
         <small style="color:#666">${notice.createdAt}</small>
         <div class="property-card" style="margin-top:15px; white-space:pre-wrap">${notice.content}</div>
-        <button class="btn" style="margin-top:15px" onclick="$('#modal').hide()">Close</button>
     `);
     $('#modal').show();
 }
