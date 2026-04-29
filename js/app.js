@@ -293,6 +293,7 @@ async function createBillWithDetails(pid) {
 
     const totalAmount = p.totalRent + extraCharge;
 
+    if(!p.billing) p.billing = [];
     p.billing.unshift({
         month,
         amount: totalAmount,
