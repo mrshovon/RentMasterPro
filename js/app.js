@@ -247,9 +247,10 @@ async function renderOwner() {
 }
 
 async function initiateBill(pid) {
-    const db = await getDB(); 
+    const db = await getDB();
     const p = db.properties.find(x => x.id == pid);
     const month = new Date().toLocaleString('default', { month: 'long', year: 'numeric' });
+    if(!p.billing) p.billing = [];
     if(p.billing.some(b => b.month == month)) return alert("Bill exists.");
     
     $('#modal-body').html(`
