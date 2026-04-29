@@ -911,6 +911,7 @@ async function updateTenantSelectForNotice() {
  */
 async function viewSentNotices() {
     const db = await getDB();
+    if (!db.notices) db.notices = [];
     const notices = db.notices.filter(n => n.ownerId === sessionUser.id).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 
     let noticesHtml = notices.length === 0 ? '<p>No notices sent yet.</p>' : '';
