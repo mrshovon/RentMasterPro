@@ -449,8 +449,9 @@ async function initializeNotifications(userId, userType) {
         if (messaging && !tokenRefreshListener) {
             tokenRefreshListener = window.firebaseOnMessage(messaging, (payload) => {
                 console.log('Message received:', payload);
-                // Handle foreground messages
-                if (Notification.permission === 'granted') {
+                // Handle foreground messages - only show if page is visible
+                // This prevents duplicate notifications when app is in background
+                if (Notification.permission === 'granted' && !document.hidden) {
                     new Notification(payload.notification?.title || 'RentMaster Pro', {
                         body: payload.notification?.body,
                         icon: '/assets/icon-192x192.png',

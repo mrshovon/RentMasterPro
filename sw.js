@@ -46,6 +46,10 @@ self.addEventListener('fetch', event => {
           if (!response || response.status !== 200 || response.type !== 'basic') {
             return response;
           }
+          // Only cache GET requests (POST/PUT/DELETE are not cacheable)
+          if (event.request.method !== 'GET') {
+            return response;
+          }
           // Clone response
           const responseToCache = response.clone();
           caches.open(CACHE_NAME)
