@@ -444,22 +444,6 @@ async function initializeNotifications(userId, userType) {
     const permissionGranted = await requestNotificationPermission();
     if (permissionGranted) {
         await registerDeviceToken(userId, userType);
-
-        // Listen for token refresh
-        if (messaging && !tokenRefreshListener) {
-            tokenRefreshListener = window.firebaseOnMessage(messaging, (payload) => {
-                console.log('Message received:', payload);
-                // Handle foreground messages - only show if page is visible
-                // This prevents duplicate notifications when app is in background
-                if (Notification.permission === 'granted' && !document.hidden) {
-                    new Notification(payload.notification?.title || 'RentMaster Pro', {
-                        body: payload.notification?.body,
-                        icon: '/assets/icon-192x192.png',
-                        data: payload.data
-                    });
-                }
-            });
-        }
     }
 }
 
