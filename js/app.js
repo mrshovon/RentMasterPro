@@ -192,7 +192,9 @@ async function createNewProperty() {
     // Send notification to tenant
     if (typeof NotificationService !== 'undefined' && p.tName) {
         const notification = NotificationService.NotificationTemplates.tenantRegistered(
+            p.tName,
             p.name,
+            p.id,
             p.ownerName
         );
         // Get tenant's FCM tokens using property ID as tenant ID
@@ -311,9 +313,11 @@ async function createBillWithDetails(pid) {
     // Send notification to tenant
     if (typeof NotificationService !== 'undefined' && p.tName) {
         const notification = NotificationService.NotificationTemplates.rentBillInitiated(
+            p.tName,
             month,
             totalAmount,
-            p.name
+            p.name,
+            p.id
         );
         // Get tenant's FCM tokens using property ID as tenant ID
         const tenantTokens = await NotificationService.getTenantTokens(p.id);
@@ -361,8 +365,11 @@ async function savePaidPayment(pid, bi) {
     // Send notification to tenant
     if (typeof NotificationService !== 'undefined' && p.tName) {
         const notification = NotificationService.NotificationTemplates.rentPaymentConfirmed(
+            p.tName,
             p.billing[bi].month,
-            p.billing[bi].amount
+            p.billing[bi].amount,
+            p.name,
+            p.id
         );
         // Get tenant's FCM tokens using property ID as tenant ID
         const tenantTokens = await NotificationService.getTenantTokens(p.id);
@@ -385,7 +392,11 @@ async function fixIssue(id, idx) {
 
     // Send notification to tenant
     if (typeof NotificationService !== 'undefined' && p.tName) {
-        const notification = NotificationService.NotificationTemplates.maintenanceIssueResolved(p.name);
+        const notification = NotificationService.NotificationTemplates.maintenanceIssueResolved(
+            p.tName,
+            p.name,
+            p.id
+        );
         // Get tenant's FCM tokens using property ID as tenant ID
         const tenantTokens = await NotificationService.getTenantTokens(p.id);
         if (tenantTokens.length > 0) {
@@ -427,7 +438,11 @@ async function processVacate(id) {
 
     // Send notification to tenant
     if (typeof NotificationService !== 'undefined' && tenantName) {
-        const notification = NotificationService.NotificationTemplates.tenantVacated(propertyName);
+        const notification = NotificationService.NotificationTemplates.tenantVacated(
+            tenantName,
+            propertyName,
+            p.id
+        );
         // Get tenant's FCM tokens using property ID as tenant ID
         const tenantTokens = await NotificationService.getTenantTokens(p.id);
         if (tenantTokens.length > 0) {
@@ -498,9 +513,11 @@ async function savePropEdit(id) {
     // Send notification to tenant if rent changed
     if (rentChanged && typeof NotificationService !== 'undefined' && p.tName) {
         const notification = NotificationService.NotificationTemplates.rentChanged(
+            p.tName,
             oldRent,
             newRent,
-            p.name
+            p.name,
+            p.id
         );
         // Get tenant's FCM tokens using property ID as tenant ID
         const tenantTokens = await NotificationService.getTenantTokens(p.id);
@@ -623,7 +640,9 @@ async function tenantNotifyPay(bi) {
         const notification = NotificationService.NotificationTemplates.rentPaymentSent(
             p.tName,
             p.billing[bi].month,
-            p.billing[bi].amount
+            p.billing[bi].amount,
+            p.name,
+            p.id
         );
         // Get owner's FCM tokens
         const ownerTokens = await NotificationService.getOwnerTokens(p.ownerId);
@@ -662,6 +681,7 @@ async function submitIssue() {
         const notification = NotificationService.NotificationTemplates.maintenanceIssueSubmitted(
             p.tName,
             p.name,
+            p.id,
             text
         );
         // Get owner's FCM tokens
