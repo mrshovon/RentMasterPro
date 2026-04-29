@@ -710,15 +710,15 @@ async function createNotice() {
     const title = $('#notice-title').val();
     const content = $('#notice-content').val();
     const targetType = $('#notice-target-type').val();
-    const targetPropertyId = $('#notice-property-select').val();
     const targetTenantId = $('#notice-tenant-select').val();
 
     if (!title || !content) return alert('Please fill in title and content');
+    if (targetType === 'tenant' && !targetTenantId) return alert('Please select a tenant');
 
     const notice = {
         id: 'notice_' + Date.now(),
         ownerId: sessionUser.id,
-        propertyId: targetType === 'all' ? null : (targetType === 'property' ? targetPropertyId : targetPropertyId),
+        propertyId: targetType === 'tenant' ? targetTenantId : null,
         tenantId: targetType === 'tenant' ? targetTenantId : null,
         title,
         content,
@@ -730,6 +730,7 @@ async function createNotice() {
     await setDB(db);
     $('#modal').hide();
     renderOwner();
+    alert('Notice published successfully!');
 
     // Send push notification to affected tenants
     await sendNoticeNotification(notice);
@@ -744,27 +745,17 @@ async function sendNoticeNotification(notice) {
     const db = await getDB();
     let affectedTenants = [];
 
-    if (notice.propertyId === null) {
-        // All properties
+    if (notice.tenantId === null) {
+        // All tenants
         affectedTenants = db.properties.filter(p => p.ownerId === notice.ownerId && p.tName).map(p => ({
             tenantName: p.tName,
             propertyId: p.id,
             propertyName: p.name
         }));
-    } else if (notice.tenantId === null) {
-        // Specific property, all tenants
-        const property = db.properties.find(p => p.id === notice.propertyId);
-        if (property && property.tName) {
-            affectedTenants.push({
-                tenantName: property.tName,
-                propertyId: property.id,
-                propertyName: property.name
-            });
-        }
     } else {
         // Specific tenant
-        const property = db.properties.find(p => p.id === notice.propertyId);
-        if (property) {
+        const property = db.properties.find(p => p.id === notice.tenantId);
+        if (property && property.tName) {
             affectedTenants.push({
                 tenantName: property.tName,
                 propertyId: property.id,
@@ -796,11 +787,9 @@ async function getNoticesForTenant(tenantId, propertyId) {
     if (!db.notices) return [];
 
     return db.notices.filter(notice => {
-        // Notice must be for this property or all properties
-        const propertyMatch = notice.propertyId === null || notice.propertyId === propertyId;
-        // Notice must be for this tenant or all tenants in property
+        // Notice must be for this tenant or all tenants
         const tenantMatch = notice.tenantId === null || notice.tenantId === tenantId;
-        return propertyMatch && tenantMatch;
+        return tenantMatch;
     }).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 }
 
@@ -855,21 +844,14 @@ async function openCreateNoticeModal() {
         <div>
             <label><small>Target</small></label>
             <select id="notice-target-type" class="styled-select" onchange="updateNoticeTargetOptions()">
-                <option value="all">All My Properties</option>
-                <option value="property">Specific Property</option>
+                <option value="all">All Tenants</option>
                 <option value="tenant">Specific Tenant</option>
-            </select>
-        </div>
-        <div id="notice-property-select-container" style="display:none">
-            <label><small>Property</small></label>
-            <select id="notice-property-select" class="styled-select" onchange="updateTenantSelectForNotice()">
-                ${propertyOptions}
             </select>
         </div>
         <div id="notice-tenant-select-container" style="display:none">
             <label><small>Tenant</small></label>
             <select id="notice-tenant-select" class="styled-select">
-                <option value="">Select property first</option>
+                ${propertyOptions}
             </select>
         </div>
         <div>
@@ -890,23 +872,7 @@ async function openCreateNoticeModal() {
  */
 function updateNoticeTargetOptions() {
     const targetType = $('#notice-target-type').val();
-    $('#notice-property-select-container').toggle(targetType !== 'all');
     $('#notice-tenant-select-container').toggle(targetType === 'tenant');
-}
-
-/**
- * Update tenant select for specific property
- */
-async function updateTenantSelectForNotice() {
-    const propertyId = $('#notice-property-select').val();
-    const db = await getDB();
-    const property = db.properties.find(p => p.id === propertyId);
-
-    if (property && property.tName) {
-        $('#notice-tenant-select').html(`<option value="${propertyId}">${property.tName}</option>`);
-    } else {
-        $('#notice-tenant-select').html('<option value="">No tenant</option>');
-    }
 }
 
 /**
@@ -920,13 +886,10 @@ async function viewSentNotices() {
     let noticesHtml = notices.length === 0 ? '<p>No notices sent yet.</p>' : '';
 
     notices.forEach(notice => {
-        let targetText = 'All Properties';
-        if (notice.propertyId) {
-            const property = db.properties.find(p => p.id === notice.propertyId);
-            targetText = property ? property.name : 'Unknown Property';
-            if (notice.tenantId) {
-                targetText += ` (${property.tName})`;
-            }
+        let targetText = 'All Tenants';
+        if (notice.tenantId) {
+            const property = db.properties.find(p => p.id === notice.tenantId);
+            targetText = property ? `${property.name} (${property.tName})` : 'Unknown Tenant';
         }
 
         noticesHtml += `
