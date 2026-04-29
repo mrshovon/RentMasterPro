@@ -92,12 +92,16 @@ async function processLogin() {
         return; 
     }
     const pIdx = properties.findIndex(p => p.id == id && p.pass == pass);
-    if(pIdx != -1) { curIdx = pIdx; curPid = properties[pIdx].id; $('#login-screen').hide(); $('#tenant-view').show(); renderTenant(); 
+    if(pIdx != -1) { curIdx = pIdx; curPid = properties[pIdx].id; sessionUser = { id: properties[pIdx].id, type: 'tenant', propertyId: properties[pIdx].id }; $('#login-screen').hide(); $('#tenant-view').show(); renderTenant();
         // Initialize notifications for tenant
         if (typeof NotificationService !== 'undefined') {
             NotificationService.initializeNotifications(properties[pIdx].id, 'tenant');
         }
-        return; 
+        // Check for unread notices
+        checkUnreadNoticesOnLogin();
+        // Update notice badge
+        updateNoticeBadge();
+        return;
     }
     alert("Invalid login credentials.");
 }
@@ -691,6 +695,373 @@ async function submitIssue() {
         } else {
             console.warn('No FCM tokens found for owner:', p.ownerId);
         }
+    }
+}
+
+// --- NOTICE LOGIC ---
+
+/**
+ * Create a new notice
+ */
+async function createNotice() {
+    const db = await getDB();
+    if (!db.notices) db.notices = [];
+
+    const title = $('#notice-title').val();
+    const content = $('#notice-content').val();
+    const targetType = $('#notice-target-type').val();
+    const targetPropertyId = $('#notice-property-select').val();
+    const targetTenantId = $('#notice-tenant-select').val();
+
+    if (!title || !content) return alert('Please fill in title and content');
+
+    const notice = {
+        id: 'notice_' + Date.now(),
+        ownerId: sessionUser.id,
+        propertyId: targetType === 'all' ? null : (targetType === 'property' ? targetPropertyId : targetPropertyId),
+        tenantId: targetType === 'tenant' ? targetTenantId : null,
+        title,
+        content,
+        createdAt: new Date().toLocaleDateString(),
+        readBy: []
+    };
+
+    db.notices.push(notice);
+    await setDB(db);
+    $('#modal').hide();
+    renderOwner();
+
+    // Send push notification to affected tenants
+    await sendNoticeNotification(notice);
+}
+
+/**
+ * Send push notification for new notice
+ */
+async function sendNoticeNotification(notice) {
+    if (typeof NotificationService === 'undefined') return;
+
+    const db = await getDB();
+    let affectedTenants = [];
+
+    if (notice.propertyId === null) {
+        // All properties
+        affectedTenants = db.properties.filter(p => p.ownerId === notice.ownerId && p.tName).map(p => ({
+            tenantName: p.tName,
+            propertyId: p.id,
+            propertyName: p.name
+        }));
+    } else if (notice.tenantId === null) {
+        // Specific property, all tenants
+        const property = db.properties.find(p => p.id === notice.propertyId);
+        if (property && property.tName) {
+            affectedTenants.push({
+                tenantName: property.tName,
+                propertyId: property.id,
+                propertyName: property.name
+            });
+        }
+    } else {
+        // Specific tenant
+        const property = db.properties.find(p => p.id === notice.propertyId);
+        if (property) {
+            affectedTenants.push({
+                tenantName: property.tName,
+                propertyId: property.id,
+                propertyName: property.name
+            });
+        }
+    }
+
+    // Send notification to each affected tenant
+    for (const tenant of affectedTenants) {
+        const notification = NotificationService.NotificationTemplates.noticeCreated(
+            tenant.tenantName,
+            notice.title,
+            tenant.propertyName,
+            tenant.propertyId
+        );
+        const tenantTokens = await NotificationService.getTenantTokens(tenant.propertyId);
+        if (tenantTokens.length > 0) {
+            await NotificationService.sendPushNotification(tenantTokens, notification);
+        }
+    }
+}
+
+/**
+ * Get notices for a specific tenant
+ */
+async function getNoticesForTenant(tenantId, propertyId) {
+    const db = await getDB();
+    if (!db.notices) return [];
+
+    return db.notices.filter(notice => {
+        // Notice must be for this property or all properties
+        const propertyMatch = notice.propertyId === null || notice.propertyId === propertyId;
+        // Notice must be for this tenant or all tenants in property
+        const tenantMatch = notice.tenantId === null || notice.tenantId === tenantId;
+        return propertyMatch && tenantMatch;
+    }).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+}
+
+/**
+ * Get unread notice count for a tenant
+ */
+async function getUnreadNoticeCount(tenantId, propertyId) {
+    const notices = await getNoticesForTenant(tenantId, propertyId);
+    return notices.filter(notice => !notice.readBy || !notice.readBy.includes(tenantId)).length;
+}
+
+/**
+ * Mark notice as read
+ */
+async function markNoticeAsRead(noticeId, tenantId) {
+    const db = await getDB();
+    const notice = db.notices.find(n => n.id === noticeId);
+    if (notice) {
+        if (!notice.readBy) notice.readBy = [];
+        if (!notice.readBy.includes(tenantId)) {
+            notice.readBy.push(tenantId);
+            await setDB(db);
+        }
+    }
+}
+
+/**
+ * Delete a notice
+ */
+async function deleteNotice(noticeId) {
+    if (!confirm('Delete this notice?')) return;
+    const db = await getDB();
+    db.notices = db.notices.filter(n => n.id !== noticeId);
+    await setDB(db);
+    renderOwner();
+}
+
+/**
+ * Open create notice modal
+ */
+async function openCreateNoticeModal() {
+    const db = await getDB();
+    const ownerProperties = db.properties.filter(p => p.ownerId === sessionUser.id && p.tName);
+
+    let propertyOptions = ownerProperties.map(p => `<option value="${p.id}">${p.name} (${p.tName})</option>`).join('');
+
+    $('#modal-body').html(`
+        <h3>Create Notice</h3>
+        <div>
+            <label><small>Target</small></label>
+            <select id="notice-target-type" onchange="updateNoticeTargetOptions()">
+                <option value="all">All My Properties</option>
+                <option value="property">Specific Property</option>
+                <option value="tenant">Specific Tenant</option>
+            </select>
+        </div>
+        <div id="notice-property-select-container" style="display:none">
+            <label><small>Property</small></label>
+            <select id="notice-property-select" onchange="updateTenantSelectForNotice()">
+                ${propertyOptions}
+            </select>
+        </div>
+        <div id="notice-tenant-select-container" style="display:none">
+            <label><small>Tenant</small></label>
+            <select id="notice-tenant-select">
+                <option value="">Select property first</option>
+            </select>
+        </div>
+        <div>
+            <label><small>Title</small></label>
+            <input type="text" id="notice-title" placeholder="Notice title">
+        </div>
+        <div>
+            <label><small>Content</small></label>
+            <textarea id="notice-content" rows="5" placeholder="Enter notice content..."></textarea>
+        </div>
+        <button class="btn btn-primary" onclick="createNotice()">Publish Notice</button>
+    `);
+    $('#modal').show();
+}
+
+/**
+ * Update notice target options based on selection
+ */
+function updateNoticeTargetOptions() {
+    const targetType = $('#notice-target-type').val();
+    $('#notice-property-select-container').toggle(targetType !== 'all');
+    $('#notice-tenant-select-container').toggle(targetType === 'tenant');
+}
+
+/**
+ * Update tenant select for specific property
+ */
+async function updateTenantSelectForNotice() {
+    const propertyId = $('#notice-property-select').val();
+    const db = await getDB();
+    const property = db.properties.find(p => p.id === propertyId);
+
+    if (property && property.tName) {
+        $('#notice-tenant-select').html(`<option value="${propertyId}">${property.tName}</option>`);
+    } else {
+        $('#notice-tenant-select').html('<option value="">No tenant</option>');
+    }
+}
+
+/**
+ * View sent notices for owner
+ */
+async function viewSentNotices() {
+    const db = await getDB();
+    const notices = db.notices.filter(n => n.ownerId === sessionUser.id).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+    let noticesHtml = notices.length === 0 ? '<p>No notices sent yet.</p>' : '';
+
+    notices.forEach(notice => {
+        let targetText = 'All Properties';
+        if (notice.propertyId) {
+            const property = db.properties.find(p => p.id === notice.propertyId);
+            targetText = property ? property.name : 'Unknown Property';
+            if (notice.tenantId) {
+                targetText += ` (${property.tName})`;
+            }
+        }
+
+        noticesHtml += `
+            <div class="property-card" style="margin-bottom:10px">
+                <div style="display:flex; justify-content:space-between; align-items:start">
+                    <div>
+                        <strong>${notice.title}</strong>
+                        <small style="display:block; color:#666">${notice.createdAt}</small>
+                        <small style="display:block; color:#666">Target: ${targetText}</small>
+                    </div>
+                    <button class="btn btn-danger" style="font-size:12px; padding:5px 10px" onclick="deleteNotice('${notice.id}')">Delete</button>
+                </div>
+            </div>
+        `;
+    });
+
+    $('#modal-body').html(`
+        <h3>Sent Notices</h3>
+        <button class="btn btn-primary" style="margin-bottom:15px" onclick="openCreateNoticeModal()">+ Create Notice</button>
+        ${noticesHtml}
+    `);
+    $('#modal').show();
+}
+
+/**
+ * Check for unread notices on tenant login
+ */
+async function checkUnreadNoticesOnLogin() {
+    if (sessionUser.type !== 'tenant') return;
+
+    const db = await getDB();
+    const property = db.properties.find(p => p.id === sessionUser.propertyId);
+    if (!property) return;
+
+    const unreadCount = await getUnreadNoticeCount(sessionUser.id, property.id);
+    if (unreadCount > 0) {
+        const notices = await getNoticesForTenant(sessionUser.id, property.id);
+        const latestUnread = notices.find(n => !n.readBy || !n.readBy.includes(sessionUser.id));
+
+        if (latestUnread) {
+            showUnreadNoticePopup(latestUnread);
+        }
+    }
+}
+
+/**
+ * Show unread notice popup
+ */
+function showUnreadNoticePopup(notice) {
+    $('#modal-body').html(`
+        <h3 style="color:#dc2626">📢 New Notice!</h3>
+        <div class="property-card" style="background:#fef3c7; border:1px solid #fcd34d">
+            <strong>${notice.title}</strong>
+            <small style="display:block; color:#666; margin-top:5px">${notice.createdAt}</small>
+            <p style="margin-top:10px">${notice.content.substring(0, 150)}${notice.content.length > 150 ? '...' : ''}</p>
+        </div>
+        <button class="btn btn-primary" onclick="viewFullNotice('${notice.id}')">View Full Notice</button>
+        <button class="btn" onclick="$('#modal').hide()">Close</button>
+    `);
+    $('#modal').show();
+}
+
+/**
+ * Open notices list for tenant
+ */
+async function openNoticesList() {
+    const db = await getDB();
+    const property = db.properties.find(p => p.id === sessionUser.propertyId);
+    if (!property) return;
+
+    const notices = await getNoticesForTenant(sessionUser.id, property.id);
+
+    let noticesHtml = notices.length === 0 ? '<p>No notices.</p>' : '';
+
+    notices.forEach(notice => {
+        const isUnread = !notice.readBy || !notice.readBy.includes(sessionUser.id);
+        noticesHtml += `
+            <div class="property-card" style="margin-bottom:10px; border-left: ${isUnread ? '4px solid #dc2626' : '4px solid #10b981'}">
+                <div style="display:flex; justify-content:space-between; align-items:start">
+                    <div>
+                        <strong>${notice.title}</strong>
+                        ${isUnread ? '<span style="color:#dc2626; margin-left:10px">• New</span>' : ''}
+                        <small style="display:block; color:#666">${notice.createdAt}</small>
+                    </div>
+                </div>
+                <button class="btn btn-primary" style="margin-top:10px; font-size:12px" onclick="viewFullNotice('${notice.id}')">View</button>
+            </div>
+        `;
+    });
+
+    $('#modal-body').html(`
+        <h3>Notices</h3>
+        ${noticesHtml}
+    `);
+    $('#modal').show();
+}
+
+/**
+ * View full notice
+ */
+async function viewFullNotice(noticeId) {
+    const db = await getDB();
+    const notice = db.notices.find(n => n.id === noticeId);
+    if (!notice) return;
+
+    // Mark as read if tenant
+    if (sessionUser.type === 'tenant') {
+        await markNoticeAsRead(noticeId, sessionUser.id);
+        updateNoticeBadge();
+    }
+
+    $('#modal-body').html(`
+        <h3>${notice.title}</h3>
+        <small style="color:#666">${notice.createdAt}</small>
+        <div class="property-card" style="margin-top:15px; white-space:pre-wrap">${notice.content}</div>
+        <button class="btn" style="margin-top:15px" onclick="$('#modal').hide()">Close</button>
+    `);
+    $('#modal').show();
+}
+
+/**
+ * Update notice badge count
+ */
+async function updateNoticeBadge() {
+    if (sessionUser.type !== 'tenant') return;
+
+    const db = await getDB();
+    const property = db.properties.find(p => p.id === sessionUser.propertyId);
+    if (!property) return;
+
+    const unreadCount = await getUnreadNoticeCount(sessionUser.id, property.id);
+    const badge = $('#notice-badge');
+
+    if (unreadCount > 0) {
+        badge.text(unreadCount).show();
+        badge.parent().addClass('flash-animation');
+    } else {
+        badge.hide();
+        badge.parent().removeClass('flash-animation');
     }
 }
 

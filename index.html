@@ -149,6 +149,17 @@
             <button
               class="btn"
               style="background: rgba(255, 255, 255, 0.2); color: white"
+              onclick="viewSentNotices()"
+            >
+              <i
+                data-lucide="megaphone"
+                style="width: 16px; height: 16px; margin-right: 6px"
+              ></i>
+              Notices
+            </button>
+            <button
+              class="btn"
+              style="background: rgba(255, 255, 255, 0.2); color: white"
               onclick="enableNotifications()"
             >
               <i
@@ -266,6 +277,40 @@
             <strong id="t-header-title">Tenant Portal</strong>
           </div>
           <div style="display: flex; gap: 8px">
+            <button
+              class="btn"
+              style="
+                background: rgba(255, 255, 255, 0.2);
+                color: white;
+                position: relative;
+              "
+              onclick="openNoticesList()"
+            >
+              <i
+                data-lucide="megaphone"
+                style="width: 16px; height: 16px; margin-right: 6px"
+              ></i>
+              Notices
+              <span
+                id="notice-badge"
+                style="
+                  display: none;
+                  position: absolute;
+                  top: -5px;
+                  right: -5px;
+                  background: #dc2626;
+                  color: white;
+                  border-radius: 50%;
+                  width: 18px;
+                  height: 18px;
+                  font-size: 10px;
+                  display: flex;
+                  align-items: center;
+                  justify-content: center;
+                "
+                >0</span
+              >
+            </button>
             <button
               class="btn"
               style="background: rgba(255, 255, 255, 0.2); color: white"

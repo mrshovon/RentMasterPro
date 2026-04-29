@@ -429,6 +429,12 @@ const NotificationTemplates = {
         title: 'Rent Updated',
         body: `Dear ${tenantName}, your rent at ${propertyName} (ID: ${propertyId}) has been updated from ৳${oldRent.toLocaleString()} to ৳${newRent.toLocaleString()}`,
         data: { type: 'rent_changed', tenantName, oldRent: String(oldRent), newRent: String(newRent), propertyName, propertyId }
+    }),
+
+    noticeCreated: (tenantName, noticeTitle, propertyName, propertyId) => ({
+        title: 'New Notice',
+        body: `Dear ${tenantName}, you have a new notice: ${noticeTitle}. For property: ${propertyName} (ID: ${propertyId})`,
+        data: { type: 'notice_created', tenantName, noticeTitle, propertyName, propertyId }
     })
 };
 
