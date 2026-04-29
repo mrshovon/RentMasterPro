@@ -386,19 +386,19 @@ const NotificationTemplates = {
     rentBillInitiated: (month, amount, propertyName) => ({
         title: 'New Rent Bill',
         body: `Rent bill for ${month} - ৳${amount.toLocaleString()} for ${propertyName}`,
-        data: { type: 'rent_bill', month, amount, propertyName }
+        data: { type: 'rent_bill', month, amount: String(amount), propertyName }
     }),
 
     rentPaymentSent: (tenantName, month, amount) => ({
         title: 'Rent Payment Received',
         body: `${tenantName} has sent rent for ${month} - ৳${amount.toLocaleString()}`,
-        data: { type: 'payment_sent', tenantName, month, amount }
+        data: { type: 'payment_sent', tenantName, month, amount: String(amount) }
     }),
 
     rentPaymentConfirmed: (month, amount) => ({
         title: 'Payment Confirmed',
         body: `Your payment for ${month} (৳${amount.toLocaleString()}) has been confirmed`,
-        data: { type: 'payment_confirmed', month, amount }
+        data: { type: 'payment_confirmed', month, amount: String(amount) }
     }),
 
     maintenanceIssueSubmitted: (tenantName, propertyName, issue) => ({
@@ -427,8 +427,8 @@ const NotificationTemplates = {
 
     rentChanged: (oldRent, newRent, propertyName) => ({
         title: 'Rent Updated',
-        body: `Rent for ${propertyName} changed from ৳${oldRent.toLocaleString()} to ৳${newRent.toLocaleString()}`,
-        data: { type: 'rent_changed', oldRent, newRent, propertyName }
+        body: `Your rent at ${propertyName} has been updated from ৳${oldRent.toLocaleString()} to ৳${newRent.toLocaleString()}`,
+        data: { type: 'rent_changed', oldRent: String(oldRent), newRent: String(newRent), propertyName }
     })
 };
 
