@@ -864,7 +864,7 @@ async function openCreateNoticeModal() {
         </div>
         <button class="btn btn-primary" onclick="createNotice()">Publish Notice</button>
     `);
-    $('#modal').show();
+    $('#modal').show().css('display','flex');
 }
 
 /**
@@ -914,7 +914,7 @@ async function viewSentNotices() {
         <button class="btn btn-primary" style="margin-bottom:15px" onclick="openCreateNoticeModal()">+ Create Notice</button>
         ${noticesHtml}
     `);
-    $('#modal').show();
+    $('#modal').show().css('display','flex');
 }
 
 /**
@@ -954,7 +954,7 @@ function showUnreadNoticePopup(notice) {
         </div>
         <button class="btn btn-primary" onclick="viewFullNotice('${notice.id}')">View Full Notice</button>
     `);
-    $('#modal').show();
+    $('#modal').show().css('display','flex');
 }
 
 /**
@@ -992,7 +992,7 @@ async function openNoticesList() {
         </div>
         ${noticesHtml}
     `);
-    $('#modal').show();
+    $('#modal').show().css('display','flex');
 }
 
 /**
@@ -1017,7 +1017,7 @@ async function viewFullNotice(noticeId) {
         <small style="color:#666">${notice.createdAt}</small>
         <div class="property-card" style="margin-top:15px; white-space:pre-wrap">${notice.content}</div>
     `);
-    $('#modal').show();
+    $('#modal').show().css('display','flex');
 }
 
 /**
