@@ -1,4 +1,4 @@
-const CACHE_NAME = 'rentmaster-pro-v2';
+const CACHE_NAME = 'rentmaster-pro-v2.0.1';
 const urlsToCache = [
   '/',
   '/index.html',

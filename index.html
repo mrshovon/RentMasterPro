@@ -55,6 +55,10 @@
           vapidKey:
             "BOie5s_MUJ-gWc2HLWxUN5cgdDXrQ-4XX4Qffo41KBIM6gSmoYKzLVoWFUFrs5XSaG4D9upsf2VXCwYmDi27eII",
         },
+        supabase: {
+          url: "https://pkqejfscxowajrnfqwyo.supabase.co",
+          key: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBrcWVqZnNjeG93YWpybmZxd3lvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY4NDkzNjQsImV4cCI6MjA5MjQyNTM2NH0.LN8pv3VWf_UzjC2mRZRZdPqoVmESewhRcJWf7Yyz-I4",
+        },
       };
     </script>
   </head>
@@ -361,6 +365,13 @@
       <div id="modal">
         <div class="modal-content" id="modal-body"></div>
       </div>
+      <input
+        type="file"
+        id="agreement-file-input"
+        style="display: none"
+        accept=".pdf,.jpg,.jpeg,.png"
+        onchange="handleAgreementInputChange(event)"
+      />
     </div>
 
     <div id="receipt-overlay">
@@ -381,17 +392,21 @@
         getToken,
         onMessage,
       } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-messaging.js";
+      import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm";
       import {
         getFunctions,
         httpsCallable,
       } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-functions.js";
 
       const firebaseConfig = window.appConfig.firebase;
+      const supabaseConfig = window.appConfig.supabase || {};
 
       const app = initializeApp(firebaseConfig);
       const database = getDatabase(app);
       const messaging = getMessaging(app);
       const functions = getFunctions(app);
+      const supabase = createClient(supabaseConfig.url, supabaseConfig.key);
+      window.supabase = supabase;
 
       // Expose to global scope for other scripts
       window.firebase = { app, database, messaging, functions };

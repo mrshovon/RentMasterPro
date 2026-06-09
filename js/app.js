@@ -26,6 +26,94 @@ async function enableNotifications() {
 
 // Firebase Database Reference (initialized in index.html)
 let firebaseRef = window.firebaseRef || null;
+let supabaseClient = null;
+
+function initSupabase() {
+    if (supabaseClient) return supabaseClient;
+    if (!window.supabase) return null;
+    supabaseClient = window.supabase;
+    return supabaseClient;
+}
+
+function uploadAgreement(propertyId) {
+    const fileInput = document.getElementById('agreement-file-input');
+    if (!fileInput) return alert('Upload input not found');
+    fileInput.dataset.propertyId = propertyId;
+    fileInput.value = '';
+    fileInput.click();
+}
+
+async function handleAgreementInputChange(event) {
+    const input = event.target;
+    const file = input.files && input.files[0];
+    const propertyId = input.dataset.propertyId;
+    if (!file || !propertyId) return;
+    await uploadAgreementFile(propertyId, file);
+}
+
+async function uploadAgreementFile(propertyId, file) {
+    const supabase = initSupabase();
+    if (!supabase) {
+        return alert('Supabase is not configured. Please provide Supabase URL and ANON key in appConfig.');
+    }
+
+    const allowedTypes = ['application/pdf', 'image/jpeg', 'image/png'];
+    if (!allowedTypes.includes(file.type)) {
+        return alert('Only PDF, JPG, JPEG, and PNG files are allowed for agreement uploads.');
+    }
+
+    const safeFilename = file.name.replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_\.-]/g, '');
+    const storagePath = `${propertyId}/${Date.now()}_${safeFilename}`;
+
+    const { error: uploadError } = await supabase.storage.from('RentMasterProDocs').upload(storagePath, file, {
+        upsert: true,
+    });
+
+    if (uploadError) {
+        console.error('Supabase upload error:', uploadError);
+        return alert('Failed to upload agreement: ' + uploadError.message);
+    }
+
+    const { data: publicData, error: urlError } = supabase.storage.from('RentMasterProDocs').getPublicUrl(storagePath);
+    if (urlError || !publicData?.publicUrl) {
+        console.error('Supabase public URL error:', urlError);
+        return alert('Agreement uploaded but public URL could not be generated.');
+    }
+
+    await saveAgreementMetadata(propertyId, file.name, publicData.publicUrl, storagePath);
+    alert('Agreement uploaded successfully. Tenant can now access the signed agreement.');
+}
+
+async function saveAgreementMetadata(propertyId, fileName, fileUrl, storagePath) {
+    const db = await getDB();
+    if (!db.properties) db.properties = [];
+    const property = db.properties.find((x) => x.id == propertyId);
+    if (!property) return alert('Property not found');
+
+    property.agreementFileName = fileName;
+    property.agreementFileUrl = fileUrl;
+    property.agreementStoragePath = storagePath;
+    property.agreementUploadedAt = new Date().toISOString();
+    property.agreementUploadedBy = sessionUser?.id || 'owner';
+
+    await setDB(db);
+    renderOwner();
+}
+
+function viewAgreement(url) {
+    if (!url) return alert('Agreement not available');
+    window.open(url, '_blank');
+}
+
+function downloadAgreement(url, fileName = 'agreement.pdf') {
+    if (!url) return alert('Agreement not available');
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = fileName;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+}
 
 // Wait for Firebase to be initialized
 let firebaseReadyInterval = setInterval(function() {
@@ -215,7 +303,18 @@ async function renderOwner() {
     const db = await getDB();
     const list = $('#master-list').empty();
     const properties = db.properties || [];
-    properties.filter(p => p.ownerId == sessionUser.id).forEach((p) => {
+    const ownerProperties = properties.filter(p => p.ownerId == sessionUser.id || p.ownerName == sessionUser.name);
+    if (!ownerProperties.length) {
+        list.append(`
+            <div class="property-card" style="border: 2px dashed #cbd5e1; text-align:center;">
+                <h4>No properties found</h4>
+                <p>Create a property record first. After creating a property, you can upload the signed agreement from the property card below.</p>
+            </div>
+        `);
+        lucide.createIcons();
+        return;
+    }
+    ownerProperties.forEach((p) => {
         let hRows = (p.history || []).map(h => `<tr><td>${h.name}</td><td>${h.end}</td><td>৳${h.rent||0}</td><td>৳${h.srv||0}</td><td>৳${h.adv}</td></tr>`).join('');
         let rRows = (p.rentLogs || []).map(l => `<tr><td>${l.date}</td><td>৳${l.old} → ৳${l.new}</td></tr>`).join('');
         let iHtml = (p.issues || []).map((s, j) => `<div class="issue-box">⚠️ ${s} <button class="btn btn-success" style="float:right; font-size:10px" onclick="fixIssue('${p.id}',${j})">Resolve</button></div>`).join('');
@@ -225,6 +324,27 @@ async function renderOwner() {
             return `<tr><td>${b.month}</td><td>৳${b.amount}</td><td><span class="status-pill status-${b.status}">${b.status}</span></td><td>${action} <button class="btn btn-edit" style="padding:2px 5px" onclick="viewReceipt('${p.id}', ${bi}, 'Owner')">Receipt</button></td></tr>`;
         }).join('');
         const isVacant = !p.tName || p.tName.toLowerCase() == 'vacant';
+        const agreementUploadedAt = p.agreementUploadedAt ? new Date(p.agreementUploadedAt).toLocaleDateString() : '';
+        const agreementFileName = p.agreementFileName || 'Signed Agreement';
+        const safeAgreementFileName = agreementFileName.replace(/'/g, '');
+        const agreementHtml = p.agreementFileUrl ? `
+            <div style="margin-top:12px; background:#f8fafc; padding:12px; border-radius:8px;">
+                <strong>Agreement</strong>
+                <div style="margin-top:6px; font-size:13px;">
+                    <div>${agreementFileName}</div>
+                    <div style="font-size:12px; color:#475569;">Uploaded: ${agreementUploadedAt}</div>
+                </div>
+                <div style="margin-top:10px; display:flex; gap:8px; flex-wrap:wrap;">
+                    <button class="btn btn-edit" onclick="viewAgreement('${p.agreementFileUrl}')">View Agreement</button>
+                    <button class="btn btn-success" onclick="downloadAgreement('${p.agreementFileUrl}', '${safeAgreementFileName}')">Download Agreement</button>
+                    <button class="btn btn-owner" onclick="uploadAgreement('${p.id}')">Replace Agreement</button>
+                </div>
+            </div>` : `
+            <div style="margin-top:12px; background:#f8fafc; padding:12px; border-radius:8px;">
+                <strong>Agreement</strong>
+                <div style="margin-top:6px; color:#64748b; font-size:13px;">No agreement uploaded yet.</div>
+                <button class="btn btn-owner" style="margin-top:10px;" onclick="uploadAgreement('${p.id}')">Upload Agreement</button>
+            </div>`;
         list.append(`
             <div class="property-card" style="${isVacant ? 'border-left: 8px solid #cbd5e1;' : 'border-left: 8px solid var(--success);'}">
                 <div style="display:flex; justify-content:space-between">
@@ -232,6 +352,7 @@ async function renderOwner() {
                     <div>
                         <button class="btn btn-success" onclick="initiateBill('${p.id}')">Initiate Rent</button>
                         <button class="btn btn-edit" onclick="openPropEdit('${p.id}')">Edit</button>
+                        <button class="btn btn-owner" onclick="uploadAgreement('${p.id}')">Upload Agreement</button>
                         ${!isVacant ? `<button class="btn btn-vacate" onclick="openVacateModal('${p.id}')">Vacate</button>` : ''}
                         <button class="btn btn-danger" onclick="deleteProperty('${p.id}')">Delete</button>
                     </div>
@@ -241,6 +362,7 @@ async function renderOwner() {
                     <div><strong>Tenant:</strong> ${isVacant ? '<i style="color:gray">No Active Tenant</i>' : p.tName + ' (' + (p.tFamily || 1) + ')'}<br><strong>ID:</strong> ${p.tId || 'N/A'} | <strong>Mob:</strong> ${p.tPhone || 'N/A'}</div>
                 </div>
                 <p>Rent: ৳${p.rent} + Service: ৳${p.serviceCharge || 0} = <b>Total: ৳${p.totalRent}</b> | Advance: ৳${p.advance}</p>
+                ${agreementHtml}
                 <div style="margin-top:15px"><small><b>MONTHLY BILLING</b></small><table class="log-table"><thead><tr><th>Month</th><th>Amount</th><th>Status</th><th>Action</th></tr></thead><tbody>${bRows || '<tr><td colspan="4">No bills</td></tr>'}</tbody></table></div>
                 <div style="margin-top:10px"><small><b>MAINTENANCE</b></small>${iHtml}<div style="max-height:80px; overflow-y:auto; margin-top:5px">${sHtml}</div></div>
                 <div class="grid-layout">
@@ -569,6 +691,28 @@ async function renderTenant() {
     }).join('');
 
     // Enhanced tenant display with more details
+    const agreementUploadedAt = p.agreementUploadedAt ? new Date(p.agreementUploadedAt).toLocaleDateString() : '';
+    const agreementFileName = p.agreementFileName || 'Signed Agreement';
+    const safeAgreementFileName = agreementFileName.replace(/'/g, '');
+    const agreementSection = p.agreementFileUrl ? `
+        <div class="property-card" style="margin-top: 20px; background:#f8fafc;">
+            <h4>📄 Signed Agreement</h4>
+            <div style="font-size: 13px; line-height: 1.6;">
+                <div><strong>${agreementFileName}</strong></div>
+                <div style="color:#64748b; font-size:12px;">Uploaded: ${agreementUploadedAt}</div>
+            </div>
+            <div style="margin-top:10px; display:flex; gap:8px; flex-wrap:wrap;">
+                <button class="btn btn-edit" onclick="viewAgreement('${p.agreementFileUrl}')">View Agreement</button>
+                <button class="btn btn-success" onclick="downloadAgreement('${p.agreementFileUrl}', '${safeAgreementFileName}')">Download Agreement</button>
+            </div>
+        </div>
+    ` : `
+        <div class="property-card" style="margin-top: 20px; background:#f8fafc;">
+            <h4>📄 Signed Agreement</h4>
+            <p style="color:#64748b;">Agreement not uploaded yet.</p>
+        </div>
+    `;
+
     let tenantHTML = `
         <div class="property-card">
             <h2>${p.name} <small>(${p.flatNo})</small></h2>
@@ -612,7 +756,7 @@ async function renderTenant() {
         </div>
     `;
 
-    $('#tenant-display').html(tenantHTML);
+    $('#tenant-display').html(tenantHTML + agreementSection);
     $('#tenant-billing-section').html(`<div class="property-card"><h4>💳 Payment History</h4><table class="log-table">${bRows || '<tr><td colspan="4">No billing records</td></tr>'}</table></div>`);
     updateMaintenanceUI(p);
     lucide.createIcons();
