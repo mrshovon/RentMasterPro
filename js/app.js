@@ -1,12 +1,130 @@
 let sessionUser = null;
 let curIdx = null;
 let curPid = null; // stable property id for tenant sessions
+const SESSION_STORAGE_KEY = 'rentmasterpro_session';
 
-// Initialize Lucide icons
+function saveSessionState() {
+    if (!sessionUser) {
+        try { localStorage.removeItem(SESSION_STORAGE_KEY); } catch (_) {}
+        try { sessionStorage.removeItem(SESSION_STORAGE_KEY); } catch (_) {}
+        return;
+    }
+    const state = {
+        sessionUser,
+        curPid: curPid || null,
+        curIdx: curIdx != null ? curIdx : null,
+    };
+    const payload = JSON.stringify(state);
+    try {
+        localStorage.setItem(SESSION_STORAGE_KEY, payload);
+    } catch (error) {
+        console.warn('localStorage unavailable, falling back to sessionStorage', error);
+        try {
+            sessionStorage.setItem(SESSION_STORAGE_KEY, payload);
+        } catch (error2) {
+            console.warn('sessionStorage unavailable as well', error2);
+        }
+    }
+}
+
+function loadSessionState() {
+    let raw = null;
+    try {
+        raw = localStorage.getItem(SESSION_STORAGE_KEY);
+    } catch (error) {
+        raw = null;
+    }
+    if (!raw) {
+        try {
+            raw = sessionStorage.getItem(SESSION_STORAGE_KEY);
+        } catch (error) {
+            raw = null;
+        }
+    }
+    if (!raw) return null;
+    try {
+        const parsed = JSON.parse(raw);
+        if (!parsed || !parsed.sessionUser) return null;
+        sessionUser = parsed.sessionUser;
+        if (!sessionUser.type) {
+            sessionUser.type = sessionUser.id === 'master' ? 'master' : 'owner';
+        }
+        curPid = parsed.curPid || null;
+        curIdx = parsed.curIdx != null ? parsed.curIdx : null;
+        return parsed;
+    } catch (error) {
+        console.warn('Failed to restore session state', error);
+        try { localStorage.removeItem(SESSION_STORAGE_KEY); } catch (_) {}
+        try { sessionStorage.removeItem(SESSION_STORAGE_KEY); } catch (_) {}
+        return null;
+    }
+}
+
+function clearSessionState() {
+    sessionUser = null;
+    curPid = null;
+    curIdx = null;
+    try { localStorage.removeItem(SESSION_STORAGE_KEY); } catch (_) {}
+    try { sessionStorage.removeItem(SESSION_STORAGE_KEY); } catch (_) {}
+}
+
+function logout() {
+    clearSessionState();
+    showView('#login-screen');
+    $('#user-id, #user-pass').val('');
+}
+
+function showView(viewId) {
+    $('#login-screen, #master-view, #owner-view, #tenant-view').hide();
+    $(viewId).show();
+}
+
+function restoreSession() {
+    const state = loadSessionState();
+    if (!state || !state.sessionUser) return;
+
+    if (sessionUser.type === 'master') {
+        showView('#master-view');
+        renderMaster();
+        return;
+    }
+
+    if (sessionUser.type === 'owner') {
+        showView('#owner-view');
+        $('#owner-header-title').text(`Dashboard: ${sessionUser.name}`);
+        renderOwner();
+        if (typeof NotificationService !== 'undefined') {
+            NotificationService.initializeNotifications(sessionUser.id, 'owner');
+        }
+        return;
+    }
+
+    if (sessionUser.type === 'tenant') {
+        showView('#tenant-view');
+        renderTenant();
+        if (typeof NotificationService !== 'undefined') {
+            NotificationService.initializeNotifications(sessionUser.id, 'tenant');
+        }
+        if (typeof checkUnreadNoticesOnLogin === 'function') {
+            checkUnreadNoticesOnLogin();
+        }
+        if (typeof updateNoticeBadge === 'function') {
+            updateNoticeBadge();
+        }
+        return;
+    }
+}
+
+// Initialize Lucide icons and restore session early
 document.addEventListener('DOMContentLoaded', function() {
   if (typeof lucide !== 'undefined') {
     lucide.createIcons();
   }
+  restoreSession();
+});
+
+window.addEventListener('load', function() {
+  restoreSession();
 });
 
 // Enable notifications function
@@ -119,6 +237,7 @@ function downloadAgreement(url, fileName = 'agreement.pdf') {
 let firebaseReadyInterval = setInterval(function() {
     if (window.firebaseRef) {
         firebaseRef = window.firebaseRef;
+        restoreSession();
         //console.log('Firebase reference ready');
         clearInterval(firebaseReadyInterval);
     }
@@ -168,27 +287,52 @@ function calcTotal() {
 
 async function processLogin() {
     const id = $('#user-id').val(), pass = $('#user-pass').val(), db = await getDB();
-    if(id == 'master' && pass == 'admin') { $('#login-screen').hide(); $('#master-view').show(); renderMaster(); return; }
+    if(id == 'master' && pass == 'admin') {
+        sessionUser = { id: 'master', type: 'master' };
+        saveSessionState();
+        $('#login-screen').hide();
+        $('#master-view').show();
+        renderMaster();
+        return;
+    }
     const owners = db.owners || [];
     const properties = db.properties || [];
     const own = owners.find(o => o.id == id && o.pass == pass);
-    if(own) { sessionUser = own; $('#login-screen').hide(); $('#owner-view').show(); $('#owner-header-title').text(`Dashboard: ${own.name}`); renderOwner(); 
-        // Initialize notifications for owner
+    if(own) {
+        sessionUser = { id: own.id, name: own.name, type: 'owner' };
+        saveSessionState();
+        $('#login-screen').hide();
+        $('#owner-view').show();
+        $('#owner-header-title').text(`Dashboard: ${own.name}`);
+        renderOwner();
         if (typeof NotificationService !== 'undefined') {
             NotificationService.initializeNotifications(own.id, 'owner');
         }
-        return; 
+        return;
     }
     const pIdx = properties.findIndex(p => p.id == id && p.pass == pass);
-    if(pIdx != -1) { curIdx = pIdx; curPid = properties[pIdx].id; sessionUser = { id: properties[pIdx].id, type: 'tenant', propertyId: properties[pIdx].id }; $('#login-screen').hide(); $('#tenant-view').show(); renderTenant();
-        // Initialize notifications for tenant
+    if(pIdx != -1) {
+        curIdx = pIdx;
+        curPid = properties[pIdx].id;
+        sessionUser = {
+            id: properties[pIdx].id,
+            type: 'tenant',
+            propertyId: properties[pIdx].id,
+            name: properties[pIdx].tName,
+        };
+        saveSessionState();
+        $('#login-screen').hide();
+        $('#tenant-view').show();
+        renderTenant();
         if (typeof NotificationService !== 'undefined') {
             NotificationService.initializeNotifications(properties[pIdx].id, 'tenant');
         }
-        // Check for unread notices
-        checkUnreadNoticesOnLogin();
-        // Update notice badge
-        updateNoticeBadge();
+        if (typeof checkUnreadNoticesOnLogin === 'function') {
+            checkUnreadNoticesOnLogin();
+        }
+        if (typeof updateNoticeBadge === 'function') {
+            updateNoticeBadge();
+        }
         return;
     }
     alert("Invalid login credentials.");
