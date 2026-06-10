@@ -82,7 +82,7 @@ function showView(viewId) {
 function restoreSession() {
     const state = loadSessionState();
     if (!state || !state.sessionUser) return;
-
+    //console.log('Restoring session for user:', state.sessionUser);
     if (sessionUser.type === 'master') {
         showView('#master-view');
         renderMaster();
@@ -100,6 +100,7 @@ function restoreSession() {
     }
 
     if (sessionUser.type === 'tenant') {
+        //console.log('Restoring tenant session for property ID:', sessionUser.propertyId);
         showView('#tenant-view');
         renderTenant();
         if (typeof NotificationService !== 'undefined') {
@@ -292,29 +293,52 @@ let firebaseReadyInterval = setInterval(function() {
     }
 }, 50);
 
+async function waitForFirebaseReady(timeout = 5000, interval = 50) {
+    if (firebaseRef && window.firebaseGet) {
+        return true;
+    }
+
+    return new Promise(resolve => {
+        const start = Date.now();
+        const check = setInterval(() => {
+            if (window.firebaseRef) {
+                firebaseRef = window.firebaseRef;
+            }
+            if (firebaseRef && window.firebaseGet) {
+                clearInterval(check);
+                resolve(true);
+                return;
+            }
+            if (Date.now() - start >= timeout) {
+                clearInterval(check);
+                resolve(false);
+            }
+        }, interval);
+    });
+}
+
 // Get Database - Now retrieves from Firebase
 async function getDB() {
-    return new Promise(async (resolve) => {
-        if (!firebaseRef || !window.firebaseGet) {
-            console.warn('Firebase not ready, using empty data');
-            resolve({ owners: [], properties: [] });
-            return;
-        }
-        
-        try {
-            const snapshot = await window.firebaseGet(firebaseRef);
-            const data = snapshot.val();
-            resolve(data || { owners: [], properties: [] });
-        } catch (error) {
-            console.error('Error reading from Firebase:', error);
-            resolve({ owners: [], properties: [] });
-        }
-    });
+    const ready = await waitForFirebaseReady();
+    if (!ready) {
+        console.warn('Firebase not ready, using empty data');
+        return { owners: [], properties: [] };
+    }
+
+    try {
+        const snapshot = await window.firebaseGet(firebaseRef);
+        const data = snapshot.val();
+        return data || { owners: [], properties: [] };
+    } catch (error) {
+        console.error('Error reading from Firebase:', error);
+        return { owners: [], properties: [] };
+    }
 }
 
 // Set Database - Now saves to Firebase
 async function setDB(db) {
-    if (!firebaseRef || !window.firebaseSet) {
+    const ready = await waitForFirebaseReady();
+    if (!ready || !window.firebaseSet) {
         console.warn('Firebase not ready yet');
         return Promise.reject('Firebase not initialized');
     }
@@ -944,9 +968,13 @@ async function deleteProperty(id) {
 async function renderTenant() {
     const db = await getDB();
     const properties = db.properties || [];
-    // Prefer stable id lookup; fall back to numeric index for older sessions
+    // Prefer stable id lookup; fall back to tenant session or numeric index for older sessions
     let p = null;
     if (curPid) p = properties.find(x => x.id == curPid);
+    if (!p && sessionUser?.propertyId) {
+        p = properties.find(x => x.id == sessionUser.propertyId);
+        if (p) curPid = sessionUser.propertyId;
+    }
     if (!p && curIdx != null) p = properties[curIdx];
     if(!p || !p.tName) { $('#tenant-view').html('<h3>Inactive</h3>'); return; }
     // Ensure numeric fields and arrays exist to avoid runtime errors
