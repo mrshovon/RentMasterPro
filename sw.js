@@ -1,4 +1,4 @@
-const CACHE_NAME = 'rentmaster-pro-v2.0.6';
+const CACHE_NAME = 'rentmaster-pro-v2.0.7';
 const urlsToCache = [
   '/',
   '/index.html',
@@ -24,7 +24,7 @@ self.addEventListener('install', event => {
       .then(cache => {
         console.log('Opened cache');
         return cache.addAll(urlsToCache).catch(error => {
-          console.log('Cache addAll failed, some resources may not be available:', error);
+          console.log('Cache add All failed, some resources may not be available:', error);
           return Promise.resolve();
         });
       })
@@ -84,9 +84,9 @@ self.addEventListener('activate', event => {
 // Push event - handle incoming push notifications
 self.addEventListener('push', event => {
   console.log('Push notification received:', event);
-
+  
   let notificationData = {
-    title: 'RentMaster Pro',
+    title: 'RentMaster',
     body: 'You have a new notification',
     icon: '/assets/icon-192x192.png',
     badge: '/assets/icon-192x192.png',
