@@ -55,6 +55,10 @@
           vapidKey:
             "BOie5s_MUJ-gWc2HLWxUN5cgdDXrQ-4XX4Qffo41KBIM6gSmoYKzLVoWFUFrs5XSaG4D9upsf2VXCwYmDi27eII",
         },
+        supabase: {
+          url: "https://pkqejfscxowajrnfqwyo.supabase.co",
+          key: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBrcWVqZnNjeG93YWpybmZxd3lvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY4NDkzNjQsImV4cCI6MjA5MjQyNTM2NH0.LN8pv3VWf_UzjC2mRZRZdPqoVmESewhRcJWf7Yyz-I4",
+        },
       };
     </script>
   </head>
@@ -63,7 +67,13 @@
       <div id="login-screen">
         <div class="login-card">
           <div class="login-header">
-            <i data-lucide="home" class="login-icon"></i>
+            <!-- <i data-lucide="home" class="login-icon"></i> -->
+            <img
+              src="assets/icon-192x192.png"
+              alt="login-icon"
+              srcset=""
+              class="login-icon-img"
+            />
             <h2>RentMaster Pro</h2>
             <p class="login-subtitle">Unified Rental Management System</p>
           </div>
@@ -87,7 +97,7 @@
               ></i>
               Login
             </button>
-            <p class="login-hint">Master: master/admin</p>
+            <p class="login-hint"></p>
           </div>
         </div>
       </div>
@@ -103,7 +113,7 @@
           <button
             class="btn"
             style="background: rgba(255, 255, 255, 0.2); color: white"
-            onclick="location.reload()"
+            onclick="logout()"
           >
             <i
               data-lucide="log-out"
@@ -149,6 +159,17 @@
             <button
               class="btn"
               style="background: rgba(255, 255, 255, 0.2); color: white"
+              onclick="viewSentNotices()"
+            >
+              <i
+                data-lucide="megaphone"
+                style="width: 16px; height: 16px; margin-right: 6px"
+              ></i>
+              Notices
+            </button>
+            <button
+              class="btn"
+              style="background: rgba(255, 255, 255, 0.2); color: white"
               onclick="enableNotifications()"
             >
               <i
@@ -160,7 +181,7 @@
             <button
               class="btn"
               style="background: rgba(255, 255, 255, 0.2); color: white"
-              onclick="location.reload()"
+              onclick="logout()"
             >
               <i
                 data-lucide="log-out"
@@ -268,6 +289,40 @@
           <div style="display: flex; gap: 8px">
             <button
               class="btn"
+              style="
+                background: rgba(255, 255, 255, 0.2);
+                color: white;
+                position: relative;
+              "
+              onclick="openNoticesList()"
+            >
+              <i
+                data-lucide="megaphone"
+                style="width: 16px; height: 16px; margin-right: 6px"
+              ></i>
+              Notices
+              <span
+                id="notice-badge"
+                style="
+                  display: none;
+                  position: absolute;
+                  top: -5px;
+                  right: -5px;
+                  background: #dc2626;
+                  color: white;
+                  border-radius: 50%;
+                  width: 18px;
+                  height: 18px;
+                  font-size: 10px;
+                  display: flex;
+                  align-items: center;
+                  justify-content: center;
+                "
+                >0</span
+              >
+            </button>
+            <button
+              class="btn"
               style="background: rgba(255, 255, 255, 0.2); color: white"
               onclick="enableNotifications()"
             >
@@ -280,7 +335,7 @@
             <button
               class="btn"
               style="background: rgba(255, 255, 255, 0.2); color: white"
-              onclick="location.reload()"
+              onclick="logout()"
             >
               <i
                 data-lucide="log-out"
@@ -302,6 +357,13 @@
             rows="2"
             placeholder="Describe the problem..."
           ></textarea>
+          <input
+            type="file"
+            id="issue-attachment-input"
+            style="margin-top: 10px"
+            accept=".pdf,.jpg,.jpeg,.png"
+            multiple
+          />
           <button
             class="btn btn-owner"
             style="background: var(--danger)"
@@ -316,6 +378,13 @@
       <div id="modal">
         <div class="modal-content" id="modal-body"></div>
       </div>
+      <input
+        type="file"
+        id="agreement-file-input"
+        style="display: none"
+        accept=".pdf,.jpg,.jpeg,.png"
+        onchange="handleAgreementInputChange(event)"
+      />
     </div>
 
     <div id="receipt-overlay">
@@ -336,17 +405,21 @@
         getToken,
         onMessage,
       } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-messaging.js";
+      import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm";
       import {
         getFunctions,
         httpsCallable,
       } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-functions.js";
 
       const firebaseConfig = window.appConfig.firebase;
+      const supabaseConfig = window.appConfig.supabase || {};
 
       const app = initializeApp(firebaseConfig);
       const database = getDatabase(app);
       const messaging = getMessaging(app);
       const functions = getFunctions(app);
+      const supabase = createClient(supabaseConfig.url, supabaseConfig.key);
+      window.supabase = supabase;
 
       // Expose to global scope for other scripts
       window.firebase = { app, database, messaging, functions };

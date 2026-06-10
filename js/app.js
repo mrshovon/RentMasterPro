@@ -1,12 +1,131 @@
 let sessionUser = null;
 let curIdx = null;
 let curPid = null; // stable property id for tenant sessions
+const SESSION_STORAGE_KEY = 'rentmasterpro_session';
 
-// Initialize Lucide icons
+function saveSessionState() {
+    if (!sessionUser) {
+        try { localStorage.removeItem(SESSION_STORAGE_KEY); } catch (_) {}
+        try { sessionStorage.removeItem(SESSION_STORAGE_KEY); } catch (_) {}
+        return;
+    }
+    const state = {
+        sessionUser,
+        curPid: curPid || null,
+        curIdx: curIdx != null ? curIdx : null,
+    };
+    const payload = JSON.stringify(state);
+    try {
+        localStorage.setItem(SESSION_STORAGE_KEY, payload);
+    } catch (error) {
+        console.warn('localStorage unavailable, falling back to sessionStorage', error);
+        try {
+            sessionStorage.setItem(SESSION_STORAGE_KEY, payload);
+        } catch (error2) {
+            console.warn('sessionStorage unavailable as well', error2);
+        }
+    }
+}
+
+function loadSessionState() {
+    let raw = null;
+    try {
+        raw = localStorage.getItem(SESSION_STORAGE_KEY);
+    } catch (error) {
+        raw = null;
+    }
+    if (!raw) {
+        try {
+            raw = sessionStorage.getItem(SESSION_STORAGE_KEY);
+        } catch (error) {
+            raw = null;
+        }
+    }
+    if (!raw) return null;
+    try {
+        const parsed = JSON.parse(raw);
+        if (!parsed || !parsed.sessionUser) return null;
+        sessionUser = parsed.sessionUser;
+        if (!sessionUser.type) {
+            sessionUser.type = sessionUser.id === 'master' ? 'master' : 'owner';
+        }
+        curPid = parsed.curPid || null;
+        curIdx = parsed.curIdx != null ? parsed.curIdx : null;
+        return parsed;
+    } catch (error) {
+        console.warn('Failed to restore session state', error);
+        try { localStorage.removeItem(SESSION_STORAGE_KEY); } catch (_) {}
+        try { sessionStorage.removeItem(SESSION_STORAGE_KEY); } catch (_) {}
+        return null;
+    }
+}
+
+function clearSessionState() {
+    sessionUser = null;
+    curPid = null;
+    curIdx = null;
+    try { localStorage.removeItem(SESSION_STORAGE_KEY); } catch (_) {}
+    try { sessionStorage.removeItem(SESSION_STORAGE_KEY); } catch (_) {}
+}
+
+function logout() {
+    clearSessionState();
+    showView('#login-screen');
+    $('#user-id, #user-pass').val('');
+}
+
+function showView(viewId) {
+    $('#login-screen, #master-view, #owner-view, #tenant-view').hide();
+    $(viewId).show();
+}
+
+function restoreSession() {
+    const state = loadSessionState();
+    if (!state || !state.sessionUser) return;
+    //console.log('Restoring session for user:', state.sessionUser);
+    if (sessionUser.type === 'master') {
+        showView('#master-view');
+        renderMaster();
+        return;
+    }
+
+    if (sessionUser.type === 'owner') {
+        showView('#owner-view');
+        $('#owner-header-title').text(`Dashboard: ${sessionUser.name}`);
+        renderOwner();
+        if (typeof NotificationService !== 'undefined') {
+            NotificationService.initializeNotifications(sessionUser.id, 'owner');
+        }
+        return;
+    }
+
+    if (sessionUser.type === 'tenant') {
+        //console.log('Restoring tenant session for property ID:', sessionUser.propertyId);
+        showView('#tenant-view');
+        renderTenant();
+        if (typeof NotificationService !== 'undefined') {
+            NotificationService.initializeNotifications(sessionUser.id, 'tenant');
+        }
+        if (typeof checkUnreadNoticesOnLogin === 'function') {
+            checkUnreadNoticesOnLogin();
+        }
+        if (typeof updateNoticeBadge === 'function') {
+            updateNoticeBadge();
+        }
+        return;
+    }
+}
+
+// Initialize Lucide icons and restore session early
 document.addEventListener('DOMContentLoaded', function() {
   if (typeof lucide !== 'undefined') {
     lucide.createIcons();
   }
+  restoreSession();
+});
+
+window.addEventListener('load', function() {
+  restoreSession();
 });
 
 // Enable notifications function
@@ -26,39 +145,200 @@ async function enableNotifications() {
 
 // Firebase Database Reference (initialized in index.html)
 let firebaseRef = window.firebaseRef || null;
+let supabaseClient = null;
+
+function initSupabase() {
+    if (supabaseClient) return supabaseClient;
+    if (!window.supabase) return null;
+    supabaseClient = window.supabase;
+    return supabaseClient;
+}
+
+function uploadAgreement(propertyId) {
+    const fileInput = document.getElementById('agreement-file-input');
+    if (!fileInput) return alert('Upload input not found');
+    fileInput.dataset.propertyId = propertyId;
+    fileInput.value = '';
+    fileInput.click();
+}
+
+async function handleAgreementInputChange(event) {
+    const input = event.target;
+    const file = input.files && input.files[0];
+    const propertyId = input.dataset.propertyId;
+    if (!file || !propertyId) return;
+    await uploadAgreementFile(propertyId, file);
+}
+
+async function uploadAgreementFile(propertyId, file) {
+    const supabase = initSupabase();
+    if (!supabase) {
+        return alert('Supabase is not configured. Please provide Supabase URL and ANON key in appConfig.');
+    }
+
+    const allowedTypes = ['application/pdf', 'image/jpeg', 'image/png'];
+    if (!allowedTypes.includes(file.type)) {
+        return alert('Only PDF, JPG, JPEG, and PNG files are allowed for agreement uploads.');
+    }
+
+    const safeFilename = file.name.replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_\.-]/g, '');
+    const storagePath = `${propertyId}/${Date.now()}_${safeFilename}`;
+
+    const { error: uploadError } = await supabase.storage.from('RentMasterProDocs').upload(storagePath, file, {
+        upsert: true,
+    });
+
+    if (uploadError) {
+        console.error('Supabase upload error:', uploadError);
+        return alert('Failed to upload agreement: ' + uploadError.message);
+    }
+
+    const { data: publicData, error: urlError } = supabase.storage.from('RentMasterProDocs').getPublicUrl(storagePath);
+    if (urlError || !publicData?.publicUrl) {
+        console.error('Supabase public URL error:', urlError);
+        return alert('Agreement uploaded but public URL could not be generated.');
+    }
+
+    await saveAgreementMetadata(propertyId, file.name, publicData.publicUrl, storagePath);
+    alert('Agreement uploaded successfully. Tenant can now access the signed agreement.');
+}
+
+async function uploadIssueAttachments(propertyId, fileList) {
+    const supabase = initSupabase();
+    if (!supabase) {
+        alert('Supabase is not configured. Please provide Supabase URL and ANON key in appConfig.');
+        return null;
+    }
+
+    if (!fileList || fileList.length === 0) return [];
+
+    const allowedTypes = ['application/pdf', 'image/jpeg', 'image/png', 'image/jpg'];
+    const attachments = [];
+
+    for (let i = 0; i < fileList.length; i++) {
+        const file = fileList[i];
+        if (!allowedTypes.includes(file.type)) {
+            alert('Only PDF, JPG, JPEG, and PNG files are allowed for issue attachments.');
+            return null;
+        }
+        const safeFilename = file.name.replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_\.-]/g, '');
+        const storagePath = `issues/${propertyId}/${Date.now()}_${i}_${safeFilename}`;
+
+        const { error: uploadError } = await supabase.storage.from('RentMasterProDocs').upload(storagePath, file, {
+            upsert: true,
+        });
+
+        if (uploadError) {
+            console.error('Supabase upload error:', uploadError);
+            alert('Failed to upload issue attachment: ' + uploadError.message);
+            return null;
+        }
+
+        const { data: publicData, error: urlError } = supabase.storage.from('RentMasterProDocs').getPublicUrl(storagePath);
+        if (urlError || !publicData?.publicUrl) {
+            console.error('Supabase public URL error:', urlError);
+            alert('Issue attachment uploaded but public URL could not be generated.');
+            return null;
+        }
+
+        attachments.push({
+            name: file.name,
+            url: publicData.publicUrl,
+            type: file.type,
+            storagePath,
+        });
+    }
+
+    return attachments;
+}
+
+async function saveAgreementMetadata(propertyId, fileName, fileUrl, storagePath) {
+    const db = await getDB();
+    if (!db.properties) db.properties = [];
+    const property = db.properties.find((x) => x.id == propertyId);
+    if (!property) return alert('Property not found');
+
+    property.agreementFileName = fileName;
+    property.agreementFileUrl = fileUrl;
+    property.agreementStoragePath = storagePath;
+    property.agreementUploadedAt = new Date().toISOString();
+    property.agreementUploadedBy = sessionUser?.id || 'owner';
+
+    await setDB(db);
+    renderOwner();
+}
+
+function viewAgreement(url) {
+    if (!url) return alert('Agreement not available');
+    window.open(url, '_blank');
+}
+
+function downloadAgreement(url, fileName = 'agreement.pdf') {
+    if (!url) return alert('Agreement not available');
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = fileName;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+}
 
 // Wait for Firebase to be initialized
 let firebaseReadyInterval = setInterval(function() {
     if (window.firebaseRef) {
         firebaseRef = window.firebaseRef;
+        restoreSession();
         //console.log('Firebase reference ready');
         clearInterval(firebaseReadyInterval);
     }
 }, 50);
 
+async function waitForFirebaseReady(timeout = 5000, interval = 50) {
+    if (firebaseRef && window.firebaseGet) {
+        return true;
+    }
+
+    return new Promise(resolve => {
+        const start = Date.now();
+        const check = setInterval(() => {
+            if (window.firebaseRef) {
+                firebaseRef = window.firebaseRef;
+            }
+            if (firebaseRef && window.firebaseGet) {
+                clearInterval(check);
+                resolve(true);
+                return;
+            }
+            if (Date.now() - start >= timeout) {
+                clearInterval(check);
+                resolve(false);
+            }
+        }, interval);
+    });
+}
+
 // Get Database - Now retrieves from Firebase
 async function getDB() {
-    return new Promise(async (resolve) => {
-        if (!firebaseRef || !window.firebaseGet) {
-            console.warn('Firebase not ready, using empty data');
-            resolve({ owners: [], properties: [] });
-            return;
-        }
-        
-        try {
-            const snapshot = await window.firebaseGet(firebaseRef);
-            const data = snapshot.val();
-            resolve(data || { owners: [], properties: [] });
-        } catch (error) {
-            console.error('Error reading from Firebase:', error);
-            resolve({ owners: [], properties: [] });
-        }
-    });
+    const ready = await waitForFirebaseReady();
+    if (!ready) {
+        console.warn('Firebase not ready, using empty data');
+        return { owners: [], properties: [] };
+    }
+
+    try {
+        const snapshot = await window.firebaseGet(firebaseRef);
+        const data = snapshot.val();
+        return data || { owners: [], properties: [] };
+    } catch (error) {
+        console.error('Error reading from Firebase:', error);
+        return { owners: [], properties: [] };
+    }
 }
 
 // Set Database - Now saves to Firebase
 async function setDB(db) {
-    if (!firebaseRef || !window.firebaseSet) {
+    const ready = await waitForFirebaseReady();
+    if (!ready || !window.firebaseSet) {
         console.warn('Firebase not ready yet');
         return Promise.reject('Firebase not initialized');
     }
@@ -80,24 +360,53 @@ function calcTotal() {
 
 async function processLogin() {
     const id = $('#user-id').val(), pass = $('#user-pass').val(), db = await getDB();
-    if(id == 'master' && pass == 'admin') { $('#login-screen').hide(); $('#master-view').show(); renderMaster(); return; }
+    if(id == 'master' && pass == 'admin') {
+        sessionUser = { id: 'master', type: 'master' };
+        saveSessionState();
+        $('#login-screen').hide();
+        $('#master-view').show();
+        renderMaster();
+        return;
+    }
     const owners = db.owners || [];
     const properties = db.properties || [];
     const own = owners.find(o => o.id == id && o.pass == pass);
-    if(own) { sessionUser = own; $('#login-screen').hide(); $('#owner-view').show(); $('#owner-header-title').text(`Dashboard: ${own.name}`); renderOwner(); 
-        // Initialize notifications for owner
+    if(own) {
+        sessionUser = { id: own.id, name: own.name, type: 'owner' };
+        saveSessionState();
+        $('#login-screen').hide();
+        $('#owner-view').show();
+        $('#owner-header-title').text(`Dashboard: ${own.name}`);
+        renderOwner();
         if (typeof NotificationService !== 'undefined') {
             NotificationService.initializeNotifications(own.id, 'owner');
         }
-        return; 
+        return;
     }
     const pIdx = properties.findIndex(p => p.id == id && p.pass == pass);
-    if(pIdx != -1) { curIdx = pIdx; curPid = properties[pIdx].id; $('#login-screen').hide(); $('#tenant-view').show(); renderTenant(); 
-        // Initialize notifications for tenant
+    if(pIdx != -1) {
+        curIdx = pIdx;
+        curPid = properties[pIdx].id;
+        sessionUser = {
+            id: properties[pIdx].id,
+            type: 'tenant',
+            propertyId: properties[pIdx].id,
+            name: properties[pIdx].tName,
+        };
+        saveSessionState();
+        $('#login-screen').hide();
+        $('#tenant-view').show();
+        renderTenant();
         if (typeof NotificationService !== 'undefined') {
             NotificationService.initializeNotifications(properties[pIdx].id, 'tenant');
         }
-        return; 
+        if (typeof checkUnreadNoticesOnLogin === 'function') {
+            checkUnreadNoticesOnLogin();
+        }
+        if (typeof updateNoticeBadge === 'function') {
+            updateNoticeBadge();
+        }
+        return;
     }
     alert("Invalid login credentials.");
 }
@@ -180,7 +489,8 @@ async function createNewProperty() {
         id: 'UNIT-'+Math.floor(1000+Math.random()*9000), name: $('#new-p-name').val(), address: $('#new-p-address').val(), flatNo: $('#new-p-flat').val(),
         tName: $('#new-t-name').val(), tId: $('#new-t-id').val(), tPhone: $('#new-t-phone').val(), tFamily: $('#new-t-family').val(),
         rent: rent, serviceCharge: service, totalRent: rent + service, advance: $('#new-p-advance').val(), rentedDate: $('#new-p-date').val(),
-        pass: $('#new-t-pass').val(), history: [], rentLogs: [], issues: [], solvedIssues: [], billing: []
+        pass: $('#new-t-pass').val(), history: [], rentLogs: [], issues: [], solvedIssues: [], billing: [],
+        serviceChargeBreakdown: { caretaker: 0, dustCollectors: 0, commonGas: 0, commonElectricity: 0, securityGuard: 0, liftMaintenance: 0, water: 0 }
     };
     if(!p.name || !p.tName) return alert("Fill required names");
     if (!db.properties) db.properties = [];
@@ -192,7 +502,9 @@ async function createNewProperty() {
     // Send notification to tenant
     if (typeof NotificationService !== 'undefined' && p.tName) {
         const notification = NotificationService.NotificationTemplates.tenantRegistered(
+            p.tName,
             p.name,
+            p.id,
             p.ownerName
         );
         // Get tenant's FCM tokens using property ID as tenant ID
@@ -209,16 +521,58 @@ async function renderOwner() {
     const db = await getDB();
     const list = $('#master-list').empty();
     const properties = db.properties || [];
-    properties.filter(p => p.ownerId == sessionUser.id).forEach((p) => {
+    const ownerProperties = properties.filter(p => p.ownerId == sessionUser.id || p.ownerName == sessionUser.name);
+    if (!ownerProperties.length) {
+        list.append(`
+            <div class="property-card" style="border: 2px dashed #cbd5e1; text-align:center;">
+                <h4>No properties found</h4>
+                <p>Create a property record first. After creating a property, you can upload the signed agreement from the property card below.</p>
+            </div>
+        `);
+        lucide.createIcons();
+        return;
+    }
+    ownerProperties.forEach((p) => {
         let hRows = (p.history || []).map(h => `<tr><td>${h.name}</td><td>${h.end}</td><td>৳${h.rent||0}</td><td>৳${h.srv||0}</td><td>৳${h.adv}</td></tr>`).join('');
         let rRows = (p.rentLogs || []).map(l => `<tr><td>${l.date}</td><td>৳${l.old} → ৳${l.new}</td></tr>`).join('');
-        let iHtml = (p.issues || []).map((s, j) => `<div class="issue-box">⚠️ ${s} <button class="btn btn-success" style="float:right; font-size:10px" onclick="fixIssue('${p.id}',${j})">Resolve</button></div>`).join('');
-        let sHtml = (p.solvedIssues || []).map(s => `<div class="resolved-box">✔️ ${s}</div>`).join('');
+        let iHtml = (p.issues || []).map((issue, j) => {
+            const desc = typeof issue === 'string' ? issue : issue.description || '';
+            const attachments = typeof issue === 'object' && issue.attachments ? issue.attachments : [];
+            const attachmentsHtml = attachments.length ? `<div style="margin-top:8px; display:flex; flex-wrap:wrap; gap:6px;">${attachments.map(file => `<a class="btn btn-edit" style="padding:4px 8px; font-size:12px" href="${file.url}" target="_blank" rel="noreferrer">${file.name || 'View'}</a>`).join('')}</div>` : '';
+            return `<div class="issue-box">⚠️ ${desc}${attachmentsHtml} <button class="btn btn-success" style="float:right; font-size:10px" onclick="fixIssue('${p.id}',${j})">Resolve</button></div>`;
+        }).join('');
+        let sHtml = (p.solvedIssues || []).map(issue => {
+            const desc = typeof issue === 'string' ? issue : issue.description || '';
+            const attachments = typeof issue === 'object' && issue.attachments ? issue.attachments : [];
+            const attachmentsHtml = attachments.length ? `<div style="margin-top:8px; display:flex; flex-wrap:wrap; gap:6px;">${attachments.map(file => `<a class="btn btn-edit" style="padding:4px 8px; font-size:12px" href="${file.url}" target="_blank" rel="noreferrer">${file.name || 'View'}</a>`).join('')}</div>` : '';
+            return `<div class="resolved-box">✔️ ${desc}${attachmentsHtml}</div>`;
+        }).join('');
         let bRows = (p.billing || []).map((b, bi) => {
             let action = b.status == 'pending' ? `<button class="btn btn-success" style="padding:2px 5px" onclick="confirmPayment('${p.id}', ${bi})">Confirm Payment</button>` : b.status == 'unpaid' ? `<small style="color:gray">Waiting...</small>` : `<span style="color:green; font-weight:bold">PAID</span>`;
             return `<tr><td>${b.month}</td><td>৳${b.amount}</td><td><span class="status-pill status-${b.status}">${b.status}</span></td><td>${action} <button class="btn btn-edit" style="padding:2px 5px" onclick="viewReceipt('${p.id}', ${bi}, 'Owner')">Receipt</button></td></tr>`;
         }).join('');
         const isVacant = !p.tName || p.tName.toLowerCase() == 'vacant';
+        const agreementUploadedAt = p.agreementUploadedAt ? new Date(p.agreementUploadedAt).toLocaleDateString() : '';
+        const agreementFileName = p.agreementFileName || 'Signed Agreement';
+        const safeAgreementFileName = agreementFileName.replace(/'/g, '');
+        const agreementHtml = p.agreementFileUrl ? `
+            <div style="margin-top:12px; background:#f8fafc; padding:12px; border-radius:8px;">
+                <strong>Agreement</strong>
+                <div style="margin-top:6px; font-size:13px;">
+                    <div>${agreementFileName}</div>
+                    <div style="font-size:12px; color:#475569;">Uploaded: ${agreementUploadedAt}</div>
+                </div>
+                <div style="margin-top:10px; display:flex; gap:8px; flex-wrap:wrap;">
+                    <button class="btn btn-edit" onclick="viewAgreement('${p.agreementFileUrl}')">View Agreement</button>
+                    <button class="btn btn-success" onclick="downloadAgreement('${p.agreementFileUrl}', '${safeAgreementFileName}')">Download Agreement</button>
+                    <button class="btn btn-owner" onclick="uploadAgreement('${p.id}')">Replace Agreement</button>
+                </div>
+            </div>` : `
+            <div style="margin-top:12px; background:#f8fafc; padding:12px; border-radius:8px;">
+                <strong>Agreement</strong>
+                <div style="margin-top:6px; color:#64748b; font-size:13px;">No agreement uploaded yet.</div>
+                <button class="btn btn-owner" style="margin-top:10px;" onclick="uploadAgreement('${p.id}')">Upload Agreement</button>
+            </div>`;
         list.append(`
             <div class="property-card" style="${isVacant ? 'border-left: 8px solid #cbd5e1;' : 'border-left: 8px solid var(--success);'}">
                 <div style="display:flex; justify-content:space-between">
@@ -234,7 +588,8 @@ async function renderOwner() {
                     <div><strong>Property:</strong> ${p.flatNo}, ${p.address}<br><strong>Owner:</strong> ${p.ownerName} (${p.ownerPhone || 'N/A'})</div>
                     <div><strong>Tenant:</strong> ${isVacant ? '<i style="color:gray">No Active Tenant</i>' : p.tName + ' (' + (p.tFamily || 1) + ')'}<br><strong>ID:</strong> ${p.tId || 'N/A'} | <strong>Mob:</strong> ${p.tPhone || 'N/A'}</div>
                 </div>
-                <p>Rent: ৳${p.rent} + Service: ৳${p.serviceCharge || 0} = <b>Total: ৳${p.totalRent}</b> | Advance: ৳${p.advance}</p>
+                <p>Rent: ৳${p.rent} + Service: <span style="cursor:pointer; text-decoration:underline; color:var(--owner);" onclick="openServiceChargeModal('${p.id}')">৳${p.serviceCharge || 0}</span> = <b>Total: ৳${p.totalRent}</b> | Advance: ৳${p.advance}</p>
+                ${agreementHtml}
                 <div style="margin-top:15px"><small><b>MONTHLY BILLING</b></small><table class="log-table"><thead><tr><th>Month</th><th>Amount</th><th>Status</th><th>Action</th></tr></thead><tbody>${bRows || '<tr><td colspan="4">No bills</td></tr>'}</tbody></table></div>
                 <div style="margin-top:10px"><small><b>MAINTENANCE</b></small>${iHtml}<div style="max-height:80px; overflow-y:auto; margin-top:5px">${sHtml}</div></div>
                 <div class="grid-layout">
@@ -247,10 +602,11 @@ async function renderOwner() {
 }
 
 async function initiateBill(pid) {
-    const db = await getDB(); 
+    const db = await getDB();
     const p = db.properties.find(x => x.id == pid);
     if(!p) return alert("Property not found.");
     const month = new Date().toLocaleString('default', { month: 'long', year: 'numeric' });
+    if(!p.billing) p.billing = [];
     if(p.billing.some(b => b.month == month)) return alert("Bill exists.");
     
     $('#modal-body').html(`
@@ -293,6 +649,7 @@ async function createBillWithDetails(pid) {
 
     const totalAmount = p.totalRent + extraCharge;
 
+    if(!p.billing) p.billing = [];
     p.billing.unshift({
         month,
         amount: totalAmount,
@@ -310,9 +667,11 @@ async function createBillWithDetails(pid) {
     // Send notification to tenant
     if (typeof NotificationService !== 'undefined' && p.tName) {
         const notification = NotificationService.NotificationTemplates.rentBillInitiated(
+            p.tName,
             month,
             totalAmount,
-            p.name
+            p.name,
+            p.id
         );
         // Get tenant's FCM tokens using property ID as tenant ID
         const tenantTokens = await NotificationService.getTenantTokens(p.id);
@@ -360,8 +719,11 @@ async function savePaidPayment(pid, bi) {
     // Send notification to tenant
     if (typeof NotificationService !== 'undefined' && p.tName) {
         const notification = NotificationService.NotificationTemplates.rentPaymentConfirmed(
+            p.tName,
             p.billing[bi].month,
-            p.billing[bi].amount
+            p.billing[bi].amount,
+            p.name,
+            p.id
         );
         // Get tenant's FCM tokens using property ID as tenant ID
         const tenantTokens = await NotificationService.getTenantTokens(p.id);
@@ -378,13 +740,19 @@ async function fixIssue(id, idx) {
     const p = db.properties.find(x => x.id == id);
     const res = p.issues.splice(idx, 1)[0];
     if(!p.solvedIssues) p.solvedIssues = [];
-    p.solvedIssues.push(res + " [Fixed: " + new Date().toLocaleDateString() + "]");
+    const resolvedIssue = typeof res === 'string' ? { description: res, createdAt: new Date().toLocaleDateString(), attachments: [] } : res;
+    resolvedIssue.resolvedAt = new Date().toLocaleDateString();
+    p.solvedIssues.push(resolvedIssue);
     await setDB(db);
     renderOwner();
 
     // Send notification to tenant
     if (typeof NotificationService !== 'undefined' && p.tName) {
-        const notification = NotificationService.NotificationTemplates.maintenanceIssueResolved(p.name);
+        const notification = NotificationService.NotificationTemplates.maintenanceIssueResolved(
+            p.tName,
+            p.name,
+            p.id
+        );
         // Get tenant's FCM tokens using property ID as tenant ID
         const tenantTokens = await NotificationService.getTenantTokens(p.id);
         if (tenantTokens.length > 0) {
@@ -420,13 +788,24 @@ async function processVacate(id) {
     p.history.push({ name: p.tName, end: endDate, adv: p.advance, rent: p.rent, srv: p.serviceCharge });
     p.tName = ""; p.tId = ""; p.tPhone = ""; p.tFamily = ""; p.pass = ""; p.rentedDate = "";
     p.rentLogs = []; p.issues = []; p.solvedIssues = []; p.billing = [];
+    
+    // Clear session if current tenant was vacated
+    if (curPid === id || (curIdx != null && db.properties[curIdx]?.id === id)) {
+        clearSessionState();
+        showView('#login-screen');
+    }
+    
     await setDB(db);
     $('#modal').hide();
     renderOwner();
 
     // Send notification to tenant
     if (typeof NotificationService !== 'undefined' && tenantName) {
-        const notification = NotificationService.NotificationTemplates.tenantVacated(propertyName);
+        const notification = NotificationService.NotificationTemplates.tenantVacated(
+            tenantName,
+            propertyName,
+            p.id
+        );
         // Get tenant's FCM tokens using property ID as tenant ID
         const tenantTokens = await NotificationService.getTenantTokens(p.id);
         if (tenantTokens.length > 0) {
@@ -497,9 +876,11 @@ async function savePropEdit(id) {
     // Send notification to tenant if rent changed
     if (rentChanged && typeof NotificationService !== 'undefined' && p.tName) {
         const notification = NotificationService.NotificationTemplates.rentChanged(
+            p.tName,
             oldRent,
             newRent,
-            p.name
+            p.name,
+            p.id
         );
         // Get tenant's FCM tokens using property ID as tenant ID
         const tenantTokens = await NotificationService.getTenantTokens(p.id);
@@ -509,6 +890,71 @@ async function savePropEdit(id) {
             console.warn('No FCM tokens found for tenant:', p.id);
         }
     }
+}
+
+async function openServiceChargeModal(propertyId) {
+    const db = await getDB();
+    const p = db.properties.find(x => x.id == propertyId);
+    if (!p) return alert('Property not found');
+    
+    const isOwner = sessionUser.id === p.ownerId || sessionUser.id === p.ownerName;
+    const breakdown = p.serviceChargeBreakdown || {};
+    
+    const items = [
+        { key: 'caretaker', label: 'Caretaker/Darwan' },
+        { key: 'dustCollectors', label: 'Dust Collectors' },
+        { key: 'commonGas', label: 'Common Gas' },
+        { key: 'commonElectricity', label: 'Common Electricity' },
+        { key: 'securityGuard', label: 'Security Guard' },
+        { key: 'liftMaintenance', label: 'Lift Maintenance' },
+        { key: 'water', label: 'Water' }
+    ];
+    
+    let itemsHtml = items.map(item => {
+        const value = breakdown[item.key] || 0;
+        if (isOwner) {
+            return `<div class="grid-2"><label><small>${item.label}</small></label><input type="number" class="sc-item" data-key="${item.key}" value="${value}" placeholder="0"></div>`;
+        } else {
+            return `<div class="grid-2"><label><small>${item.label}</small></label><div style="padding:8px; background:#f1f5f9; border-radius:4px; border:1px solid #e2e8f0;">৳${value}</div></div>`;
+        }
+    }).join('');
+    
+    let modalContent = `
+        <h3>Service Charge Breakdown</h3>
+        <p style="font-size:13px; color:#64748b; margin-bottom:15px;">Property: ${p.name} (${p.id})</p>
+        <div class="grid-2" style="gap:15px;">
+            ${itemsHtml}
+        </div>
+    `;
+    
+    if (isOwner) {
+        modalContent += `<button class="btn btn-owner" style="margin-top:15px; width:100%;" onclick="saveServiceChargeBreakdown('${propertyId}')">Save Breakdown</button>`;
+    }
+    
+    modalContent += `<button class="btn" style="margin-top:8px; width:100%;" onclick="$('#modal').hide()">Close</button>`;
+    
+    $('#modal-body').html(modalContent);
+    $('#modal').show().css('display','flex');
+}
+
+async function saveServiceChargeBreakdown(propertyId) {
+    const db = await getDB();
+    const p = db.properties.find(x => x.id == propertyId);
+    if (!p) return alert('Property not found');
+    
+    if (!p.serviceChargeBreakdown) p.serviceChargeBreakdown = {};
+    
+    const items = ['caretaker', 'dustCollectors', 'commonGas', 'commonElectricity', 'securityGuard', 'liftMaintenance', 'water'];
+    
+    items.forEach(key => {
+        const value = parseFloat($(`[data-key="${key}"]`).val()) || 0;
+        p.serviceChargeBreakdown[key] = value;
+    });
+    
+    await setDB(db);
+    $('#modal').hide();
+    renderOwner();
+    alert('Service charge breakdown updated successfully!');
 }
 
 async function deleteProperty(id) { 
@@ -523,9 +969,13 @@ async function deleteProperty(id) {
 async function renderTenant() {
     const db = await getDB();
     const properties = db.properties || [];
-    // Prefer stable id lookup; fall back to numeric index for older sessions
+    // Prefer stable id lookup; fall back to tenant session or numeric index for older sessions
     let p = null;
     if (curPid) p = properties.find(x => x.id == curPid);
+    if (!p && sessionUser?.propertyId) {
+        p = properties.find(x => x.id == sessionUser.propertyId);
+        if (p) curPid = sessionUser.propertyId;
+    }
     if (!p && curIdx != null) p = properties[curIdx];
     if(!p || !p.tName) { $('#tenant-view').html('<h3>Inactive</h3>'); return; }
     // Ensure numeric fields and arrays exist to avoid runtime errors
@@ -547,6 +997,28 @@ async function renderTenant() {
     }).join('');
 
     // Enhanced tenant display with more details
+    const agreementUploadedAt = p.agreementUploadedAt ? new Date(p.agreementUploadedAt).toLocaleDateString() : '';
+    const agreementFileName = p.agreementFileName || 'Signed Agreement';
+    const safeAgreementFileName = agreementFileName.replace(/'/g, '');
+    const agreementSection = p.agreementFileUrl ? `
+        <div class="property-card" style="margin-top: 20px; background:#f8fafc;">
+            <h4>📄 Signed Agreement</h4>
+            <div style="font-size: 13px; line-height: 1.6;">
+                <div><strong>${agreementFileName}</strong></div>
+                <div style="color:#64748b; font-size:12px;">Uploaded: ${agreementUploadedAt}</div>
+            </div>
+            <div style="margin-top:10px; display:flex; gap:8px; flex-wrap:wrap;">
+                <button class="btn btn-edit" onclick="viewAgreement('${p.agreementFileUrl}')">View Agreement</button>
+                <button class="btn btn-success" onclick="downloadAgreement('${p.agreementFileUrl}', '${safeAgreementFileName}')">Download Agreement</button>
+            </div>
+        </div>
+    ` : `
+        <div class="property-card" style="margin-top: 20px; background:#f8fafc;">
+            <h4>📄 Signed Agreement</h4>
+            <p style="color:#64748b;">Agreement not uploaded yet.</p>
+        </div>
+    `;
+
     let tenantHTML = `
         <div class="property-card">
             <h2>${p.name} <small>(${p.flatNo})</small></h2>
@@ -577,7 +1049,7 @@ async function renderTenant() {
                     <div style="margin-bottom: 8px;"><strong>💰 Rent Breakdown</strong></div>
                     <div style="font-size: 13px; line-height: 1.8;">
                         <div>Base Rent: <b style="color: var(--tenant)">৳${p.rent.toLocaleString()}</b></div>
-                        <div>Service Charge: <b style="color: var(--tenant)">৳${(p.serviceCharge || 0).toLocaleString()}</b></div>
+                        <div>Service Charge: <span style="cursor:pointer; text-decoration:underline; color:var(--tenant); position:relative;" onclick="openServiceChargeModal('${p.id}')" title="Click to view breakdown">৳${(p.serviceCharge || 0).toLocaleString()} 📋</span></div>
                         <div>Total Monthly: <b style="color: var(--master); font-size: 14px;">৳${p.totalRent.toLocaleString()}</b></div>
                         <div style="margin-top: 8px;">Advance Paid: <b style="color: var(--success)">৳${p.advance.toLocaleString()}</b></div>
                     </div>
@@ -590,7 +1062,7 @@ async function renderTenant() {
         </div>
     `;
 
-    $('#tenant-display').html(tenantHTML);
+    $('#tenant-display').html(tenantHTML + agreementSection);
     $('#tenant-billing-section').html(`<div class="property-card"><h4>💳 Payment History</h4><table class="log-table">${bRows || '<tr><td colspan="4">No billing records</td></tr>'}</table></div>`);
     updateMaintenanceUI(p);
     lucide.createIcons();
@@ -622,7 +1094,9 @@ async function tenantNotifyPay(bi) {
         const notification = NotificationService.NotificationTemplates.rentPaymentSent(
             p.tName,
             p.billing[bi].month,
-            p.billing[bi].amount
+            p.billing[bi].amount,
+            p.name,
+            p.id
         );
         // Get owner's FCM tokens
         const ownerTokens = await NotificationService.getOwnerTokens(p.ownerId);
@@ -635,25 +1109,40 @@ async function tenantNotifyPay(bi) {
 }
 
 async function submitIssue() {
-    const text = $('#issue-text').val();
-    if(!text) return;
+    const text = $('#issue-text').val().trim();
+    if(!text) return alert('Please describe the problem before submitting.');
+    const attachmentInput = document.getElementById('issue-attachment-input');
+    const files = attachmentInput ? attachmentInput.files : [];
+
     const db = await getDB();
     if(!db.properties) {
         console.error('No properties in DB');
         return alert('Error: Property not found');
     }
     let p = null;
-        if (curPid) p = db.properties.find(x => x.id == curPid); // Locate property by curPid
+    if (curPid) p = db.properties.find(x => x.id == curPid); // Locate property by curPid
     if (!p && curIdx != null) p = db.properties[curIdx];
     if(!p) {
         console.error('Property not found', { curPid, curIdx });
         return alert('Error: Property not found');
     }
     if(!p.issues) p.issues = [];
-    p.issues.push(text + " (" + new Date().toLocaleDateString() + ")");
-    //console.log('Issue submitted. Total issues now:', p.issues.length);
+
+    let attachments = [];
+    if (files && files.length > 0) {
+        attachments = await uploadIssueAttachments(p.id, files);
+        if (attachments === null) return;
+    }
+
+    p.issues.push({
+        description: text,
+        createdAt: new Date().toLocaleDateString(),
+        attachments: attachments
+    });
+
     await setDB(db);
     $('#issue-text').val('');
+    if (attachmentInput) attachmentInput.value = '';
     renderTenant();
 
     // Send notification to owner
@@ -661,6 +1150,7 @@ async function submitIssue() {
         const notification = NotificationService.NotificationTemplates.maintenanceIssueSubmitted(
             p.tName,
             p.name,
+            p.id,
             text
         );
         // Get owner's FCM tokens
@@ -670,6 +1160,350 @@ async function submitIssue() {
         } else {
             console.warn('No FCM tokens found for owner:', p.ownerId);
         }
+    }
+}
+
+// --- NOTICE LOGIC ---
+
+/**
+ * Create a new notice
+ */
+async function createNotice() {
+    const db = await getDB();
+    if (!db.notices) db.notices = [];
+
+    const title = $('#notice-title').val();
+    const content = $('#notice-content').val();
+    const targetType = $('#notice-target-type').val();
+    const targetTenantId = $('#notice-tenant-select').val();
+
+    if (!title || !content) return alert('Please fill in title and content');
+    if (targetType === 'tenant' && !targetTenantId) return alert('Please select a tenant');
+
+    const notice = {
+        id: 'notice_' + Date.now(),
+        ownerId: sessionUser.id,
+        propertyId: targetType === 'tenant' ? targetTenantId : null,
+        tenantId: targetType === 'tenant' ? targetTenantId : null,
+        title,
+        content,
+        createdAt: new Date().toLocaleDateString(),
+        readBy: []
+    };
+
+    db.notices.push(notice);
+    await setDB(db);
+    $('#modal').hide();
+    renderOwner();
+    alert('Notice published successfully!');
+
+    // Send push notification to affected tenants
+    await sendNoticeNotification(notice);
+}
+
+/**
+ * Send push notification for new notice
+ */
+async function sendNoticeNotification(notice) {
+    if (typeof NotificationService === 'undefined') return;
+
+    const db = await getDB();
+    let affectedTenants = [];
+
+    if (notice.tenantId === null) {
+        // All tenants
+        affectedTenants = db.properties.filter(p => p.ownerId === notice.ownerId && p.tName).map(p => ({
+            tenantName: p.tName,
+            propertyId: p.id,
+            propertyName: p.name
+        }));
+    } else {
+        // Specific tenant
+        const property = db.properties.find(p => p.id === notice.tenantId);
+        if (property && property.tName) {
+            affectedTenants.push({
+                tenantName: property.tName,
+                propertyId: property.id,
+                propertyName: property.name
+            });
+        }
+    }
+
+    // Send notification to each affected tenant
+    for (const tenant of affectedTenants) {
+        const notification = NotificationService.NotificationTemplates.noticeCreated(
+            tenant.tenantName,
+            notice.title,
+            tenant.propertyName,
+            tenant.propertyId
+        );
+        const tenantTokens = await NotificationService.getTenantTokens(tenant.propertyId);
+        if (tenantTokens.length > 0) {
+            await NotificationService.sendPushNotification(tenantTokens, notification);
+        }
+    }
+}
+
+/**
+ * Get notices for a specific tenant
+ */
+async function getNoticesForTenant(tenantId, propertyId) {
+    const db = await getDB();
+    if (!db.notices) return [];
+
+    return db.notices.filter(notice => {
+        // Notice must be for this tenant or all tenants (no tenantId means all tenants)
+        const tenantMatch = !notice.tenantId || notice.tenantId === tenantId;
+        return tenantMatch;
+    }).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+}
+
+/**
+ * Get unread notice count for a tenant
+ */
+async function getUnreadNoticeCount(tenantId, propertyId) {
+    const notices = await getNoticesForTenant(tenantId, propertyId);
+    return notices.filter(notice => !notice.readBy || !notice.readBy.includes(tenantId)).length;
+}
+
+/**
+ * Mark notice as read
+ */
+async function markNoticeAsRead(noticeId, tenantId) {
+    const db = await getDB();
+    const notice = db.notices.find(n => n.id === noticeId);
+    if (notice) {
+        if (!notice.readBy) notice.readBy = [];
+        if (!notice.readBy.includes(tenantId)) {
+            notice.readBy.push(tenantId);
+            await setDB(db);
+        }
+    }
+}
+
+/**
+ * Delete a notice
+ */
+async function deleteNotice(noticeId) {
+    if (!confirm('Delete this notice?')) return;
+    const db = await getDB();
+    db.notices = db.notices.filter(n => n.id !== noticeId);
+    await setDB(db);
+    renderOwner();
+}
+
+/**
+ * Open create notice modal
+ */
+async function openCreateNoticeModal() {
+    const db = await getDB();
+    const ownerProperties = db.properties.filter(p => p.ownerId === sessionUser.id && p.tName);
+
+    let propertyOptions = ownerProperties.map(p => `<option value="${p.id}">${p.name} (${p.tName})</option>`).join('');
+
+    $('#modal-body').html(`
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px">
+            <h3 style="margin:0">Create Notice</h3>
+            <button class="btn" style="background:#e2e8f0; color:#64748b" onclick="$('#modal').hide()">✕</button>
+        </div>
+        <div>
+            <label><small>Target</small></label>
+            <select id="notice-target-type" class="styled-select" onchange="updateNoticeTargetOptions()">
+                <option value="all">All Tenants</option>
+                <option value="tenant">Specific Tenant</option>
+            </select>
+        </div>
+        <div id="notice-tenant-select-container" style="display:none">
+            <label><small>Tenant</small></label>
+            <select id="notice-tenant-select" class="styled-select">
+                ${propertyOptions}
+            </select>
+        </div>
+        <div>
+            <label><small>Title</small></label>
+            <input type="text" id="notice-title" placeholder="Notice title">
+        </div>
+        <div>
+            <label><small>Content</small></label>
+            <textarea id="notice-content" rows="5" placeholder="Enter notice content..."></textarea>
+        </div>
+        <button class="btn btn-primary" onclick="createNotice()">Publish Notice</button>
+    `);
+    $('#modal').show().css('display','flex');
+}
+
+/**
+ * Update notice target options based on selection
+ */
+function updateNoticeTargetOptions() {
+    const targetType = $('#notice-target-type').val();
+    $('#notice-tenant-select-container').toggle(targetType === 'tenant');
+}
+
+/**
+ * View sent notices for owner
+ */
+async function viewSentNotices() {
+    const db = await getDB();
+    if (!db.notices) db.notices = [];
+    const notices = db.notices.filter(n => n.ownerId === sessionUser.id).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+    let noticesHtml = notices.length === 0 ? '<p>No notices sent yet.</p>' : '';
+
+    notices.forEach(notice => {
+        let targetText = 'All Tenants';
+        if (notice.tenantId) {
+            const property = db.properties.find(p => p.id === notice.tenantId);
+            targetText = property ? `${property.name} (${property.tName})` : 'Unknown Tenant';
+        }
+
+        noticesHtml += `
+            <div class="property-card" style="margin-bottom:10px">
+                <div style="display:flex; justify-content:space-between; align-items:start">
+                    <div>
+                        <strong>${notice.title}</strong>
+                        <small style="display:block; color:#666">${notice.createdAt}</small>
+                        <small style="display:block; color:#666">Target: ${targetText}</small>
+                    </div>
+                    <button class="btn btn-danger" style="font-size:12px; padding:5px 10px" onclick="deleteNotice('${notice.id}')">Delete</button>
+                </div>
+            </div>
+        `;
+    });
+
+    $('#modal-body').html(`
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px">
+            <h3 style="margin:0">Sent Notices</h3>
+            <button class="btn" style="background:#e2e8f0; color:#64748b" onclick="$('#modal').hide()">✕</button>
+        </div>
+        <button class="btn btn-primary" style="margin-bottom:15px" onclick="openCreateNoticeModal()">+ Create Notice</button>
+        ${noticesHtml}
+    `);
+    $('#modal').show().css('display','flex');
+}
+
+/**
+ * Check for unread notices on tenant login
+ */
+async function checkUnreadNoticesOnLogin() {
+    if (sessionUser.type !== 'tenant') return;
+
+    const db = await getDB();
+    const property = db.properties.find(p => p.id === sessionUser.propertyId);
+    if (!property) return;
+
+    const unreadCount = await getUnreadNoticeCount(sessionUser.id, property.id);
+    if (unreadCount > 0) {
+        const notices = await getNoticesForTenant(sessionUser.id, property.id);
+        const latestUnread = notices.find(n => !n.readBy || !n.readBy.includes(sessionUser.id));
+
+        if (latestUnread) {
+            showUnreadNoticePopup(latestUnread);
+        }
+    }
+}
+
+/**
+ * Show unread notice popup
+ */
+function showUnreadNoticePopup(notice) {
+    $('#modal-body').html(`
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px">
+            <h3 style="margin:0; color:#dc2626">📢 New Notice!</h3>
+            <button class="btn" style="background:#e2e8f0; color:#64748b" onclick="$('#modal').hide()">✕</button>
+        </div>
+        <div class="property-card" style="background:#fef3c7; border:1px solid #fcd34d">
+            <strong>${notice.title}</strong>
+            <small style="display:block; color:#666; margin-top:5px">${notice.createdAt}</small>
+            <p style="margin-top:10px">${notice.content.substring(0, 150)}${notice.content.length > 150 ? '...' : ''}</p>
+        </div>
+        <button class="btn btn-primary" onclick="viewFullNotice('${notice.id}')">View Full Notice</button>
+    `);
+    $('#modal').show().css('display','flex');
+}
+
+/**
+ * Open notices list for tenant
+ */
+async function openNoticesList() {
+    const db = await getDB();
+    const property = db.properties.find(p => p.id === sessionUser.propertyId);
+    if (!property) return;
+
+    const notices = await getNoticesForTenant(sessionUser.id, property.id);
+
+    let noticesHtml = notices.length === 0 ? '<p>No notices.</p>' : '';
+
+    notices.forEach(notice => {
+        const isUnread = !notice.readBy || !notice.readBy.includes(sessionUser.id);
+        noticesHtml += `
+            <div class="property-card" style="margin-bottom:10px; border-left: ${isUnread ? '4px solid #dc2626' : '4px solid #10b981'}">
+                <div style="display:flex; justify-content:space-between; align-items:start">
+                    <div>
+                        <strong>${notice.title}</strong>
+                        ${isUnread ? '<span style="color:#dc2626; margin-left:10px">• New</span>' : ''}
+                        <small style="display:block; color:#666">${notice.createdAt}</small>
+                    </div>
+                </div>
+                <button class="btn btn-primary" style="margin-top:10px; font-size:12px" onclick="viewFullNotice('${notice.id}')">View</button>
+            </div>
+        `;
+    });
+
+    $('#modal-body').html(`
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px">
+            <h3 style="margin:0">Notices</h3>
+            <button class="btn" style="background:#e2e8f0; color:#64748b" onclick="$('#modal').hide()">✕</button>
+        </div>
+        ${noticesHtml}
+    `);
+    $('#modal').show().css('display','flex');
+}
+
+/**
+ * View full notice
+ */
+async function viewFullNotice(noticeId) {
+    const db = await getDB();
+    const notice = db.notices.find(n => n.id === noticeId);
+    if (!notice) return;
+
+    // Mark as read if tenant
+    if (sessionUser.type === 'tenant') {
+        await markNoticeAsRead(noticeId, sessionUser.id);
+        updateNoticeBadge();
+    }
+
+    $('#modal-body').html(`
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px">
+            <h3 style="margin:0">${notice.title}</h3>
+            <button class="btn" style="background:#e2e8f0; color:#64748b" onclick="$('#modal').hide()">✕</button>
+        </div>
+        <small style="color:#666">${notice.createdAt}</small>
+        <div class="property-card" style="margin-top:15px; white-space:pre-wrap">${notice.content}</div>
+    `);
+    $('#modal').show().css('display','flex');
+}
+
+/**
+ * Update notice badge count
+ */
+async function updateNoticeBadge() {
+    if (sessionUser.type !== 'tenant') return;
+
+    const db = await getDB();
+    const property = db.properties.find(p => p.id === sessionUser.propertyId);
+    if (!property) return;
+
+    const unreadCount = await getUnreadNoticeCount(sessionUser.id, property.id);
+    const badge = $('#notice-badge');
+
+    if (unreadCount > 0) {
+        badge.text(unreadCount).show();
+        badge.parent().addClass('flash-animation');
+    } else {
+        badge.hide();
+        badge.parent().removeClass('flash-animation');
     }
 }
 
@@ -774,7 +1608,17 @@ function updateMaintenanceUI(p) {
         if (!data) return []; // Handle null/undefined
         if (Array.isArray(data)) return data; // Already an array
         if (typeof data === 'string') return data.split(',').map(s => s.trim()).filter(s => s !== "");
-        return [data.toString()]; // Fallback for numbers or objects
+        return [data]; // Keep objects intact
+    };
+
+    const formatIssue = (issue) => {
+        if (typeof issue === 'string') {
+            return { text: issue, attachments: [] };
+        }
+        return {
+            text: issue.description || '',
+            attachments: issue.attachments || []
+        };
     };
 
     const openIssues = ensureArray(p.issues);
@@ -794,22 +1638,28 @@ function updateMaintenanceUI(p) {
             <div id="maint-content-wrapper">`;
 
     // 1. Loop through Open Issues
-    openIssues.forEach(issue => {
+    openIssues.forEach(issueData => {
+        const issue = formatIssue(issueData);
+        const attachmentsHtml = issue.attachments.length ? `<div style="margin-top:8px; display:flex; flex-wrap:wrap; gap:6px;">${issue.attachments.map(file => `<a href="${file.url}" target="_blank" rel="noreferrer" style="font-size:12px; color:#1d4ed8; text-decoration:underline;">${file.name || 'View'}</a>`).join('')}</div>` : '';
         html += `
             <div class="maint-item unfixed">
                 <span class="status-dot"></span>
-                <span class="issue-text">${issue}</span>
+                <span class="issue-text">${issue.text}</span>
+                ${attachmentsHtml}
             </div>`;
     });
 
     // 2. Loop through Solved Issues (inside the scrollable list)
     if (solvedIssues.length > 0) {
         html += `<div class="maint-list">`;
-        solvedIssues.forEach(issue => {
+        solvedIssues.forEach(issueData => {
+            const issue = formatIssue(issueData);
+            const attachmentsHtml = issue.attachments.length ? `<div style="margin-top:8px; display:flex; flex-wrap:wrap; gap:6px;">${issue.attachments.map(file => `<a href="${file.url}" target="_blank" rel="noreferrer" style="font-size:12px; color:#1d4ed8; text-decoration:underline;">${file.name || 'View'}</a>`).join('')}</div>` : '';
             html += `
                 <div class="maint-item fixed">
                     <span class="status-dot"></span>
-                    <span class="issue-text">${issue}</span>
+                    <span class="issue-text">${issue.text}</span>
+                    ${attachmentsHtml}
                 </div>`;
         });
         html += `</div>`;

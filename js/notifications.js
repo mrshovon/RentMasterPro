@@ -383,52 +383,58 @@ async function storeNotificationInDatabase(tokens, notification) {
  * Notification Templates
  */
 const NotificationTemplates = {
-    rentBillInitiated: (month, amount, propertyName) => ({
-        title: 'New Rent Bill',
-        body: `Rent bill for ${month} - ৳${amount.toLocaleString()} for ${propertyName}`,
-        data: { type: 'rent_bill', month, amount, propertyName }
+    rentBillInitiated: (tenantName, month, amount, propertyName, propertyId) => ({
+        title: 'New Rent Bill Created',
+        body: `Dear ${tenantName}, rent for ${month} is created and due. Amount: ৳${amount.toLocaleString()}. For property: ${propertyName} (ID: ${propertyId})`,
+        data: { type: 'rent_bill', tenantName, month, amount: String(amount), propertyName, propertyId }
     }),
 
-    rentPaymentSent: (tenantName, month, amount) => ({
+    rentPaymentSent: (tenantName, month, amount, propertyName, propertyId) => ({
         title: 'Rent Payment Received',
-        body: `${tenantName} has sent rent for ${month} - ৳${amount.toLocaleString()}`,
-        data: { type: 'payment_sent', tenantName, month, amount }
+        body: `Dear Owner, ${tenantName} has sent rent for ${month} - ৳${amount.toLocaleString()}. For property: ${propertyName} (ID: ${propertyId})`,
+        data: { type: 'payment_sent', tenantName, month, amount: String(amount), propertyName, propertyId }
     }),
 
-    rentPaymentConfirmed: (month, amount) => ({
+    rentPaymentConfirmed: (tenantName, month, amount, propertyName, propertyId) => ({
         title: 'Payment Confirmed',
-        body: `Your payment for ${month} (৳${amount.toLocaleString()}) has been confirmed`,
-        data: { type: 'payment_confirmed', month, amount }
+        body: `Dear ${tenantName}, your payment for ${month} (৳${amount.toLocaleString()}) has been confirmed. For property: ${propertyName} (ID: ${propertyId})`,
+        data: { type: 'payment_confirmed', tenantName, month, amount: String(amount), propertyName, propertyId }
     }),
 
-    maintenanceIssueSubmitted: (tenantName, propertyName, issue) => ({
+    maintenanceIssueSubmitted: (tenantName, propertyName, propertyId, issue) => ({
         title: 'New Maintenance Issue',
-        body: `${tenantName} reported an issue at ${propertyName}: ${issue.substring(0, 50)}...`,
-        data: { type: 'maintenance_issue', tenantName, propertyName, issue }
+        body: `Dear Owner, ${tenantName} reported an issue at ${propertyName} (ID: ${propertyId}): ${issue.substring(0, 50)}...`,
+        data: { type: 'maintenance_issue', tenantName, propertyName, propertyId, issue }
     }),
 
-    maintenanceIssueResolved: (propertyName) => ({
+    maintenanceIssueResolved: (tenantName, propertyName, propertyId) => ({
         title: 'Issue Resolved',
-        body: `Your maintenance issue at ${propertyName} has been resolved`,
-        data: { type: 'maintenance_resolved', propertyName }
+        body: `Dear ${tenantName}, your maintenance issue at ${propertyName} (ID: ${propertyId}) has been resolved`,
+        data: { type: 'maintenance_resolved', tenantName, propertyName, propertyId }
     }),
 
-    tenantRegistered: (propertyName, ownerName) => ({
+    tenantRegistered: (tenantName, propertyName, propertyId, ownerName) => ({
         title: 'Welcome to RentMaster Pro',
-        body: `You've been registered at ${propertyName}. Owner: ${ownerName}`,
-        data: { type: 'tenant_registered', propertyName, ownerName }
+        body: `Dear ${tenantName}, you've been registered at ${propertyName} (ID: ${propertyId}). Owner: ${ownerName}`,
+        data: { type: 'tenant_registered', tenantName, propertyName, propertyId, ownerName }
     }),
 
-    tenantVacated: (propertyName) => ({
+    tenantVacated: (tenantName, propertyName, propertyId) => ({
         title: 'Tenancy Ended',
-        body: `Your tenancy at ${propertyName} has ended. Thank you for staying!`,
-        data: { type: 'tenant_vacated', propertyName }
+        body: `Dear ${tenantName}, your tenancy at ${propertyName} (ID: ${propertyId}) has ended. Thank you for staying!`,
+        data: { type: 'tenant_vacated', tenantName, propertyName, propertyId }
     }),
 
-    rentChanged: (oldRent, newRent, propertyName) => ({
+    rentChanged: (tenantName, oldRent, newRent, propertyName, propertyId) => ({
         title: 'Rent Updated',
-        body: `Rent for ${propertyName} changed from ৳${oldRent.toLocaleString()} to ৳${newRent.toLocaleString()}`,
-        data: { type: 'rent_changed', oldRent, newRent, propertyName }
+        body: `Dear ${tenantName}, your rent at ${propertyName} (ID: ${propertyId}) has been updated from ৳${oldRent.toLocaleString()} to ৳${newRent.toLocaleString()}`,
+        data: { type: 'rent_changed', tenantName, oldRent: String(oldRent), newRent: String(newRent), propertyName, propertyId }
+    }),
+
+    noticeCreated: (tenantName, noticeTitle, propertyName, propertyId) => ({
+        title: 'New Notice',
+        body: `Dear ${tenantName}, you have a new notice: ${noticeTitle}. For property: ${propertyName} (ID: ${propertyId})`,
+        data: { type: 'notice_created', tenantName, noticeTitle, propertyName, propertyId }
     })
 };
 
@@ -444,21 +450,6 @@ async function initializeNotifications(userId, userType) {
     const permissionGranted = await requestNotificationPermission();
     if (permissionGranted) {
         await registerDeviceToken(userId, userType);
-
-        // Listen for token refresh
-        if (messaging && !tokenRefreshListener) {
-            tokenRefreshListener = window.firebaseOnMessage(messaging, (payload) => {
-                console.log('Message received:', payload);
-                // Handle foreground messages
-                if (Notification.permission === 'granted') {
-                    new Notification(payload.notification?.title || 'RentMaster Pro', {
-                        body: payload.notification?.body,
-                        icon: '/assets/icon-192x192.png',
-                        data: payload.data
-                    });
-                }
-            });
-        }
     }
 }
 

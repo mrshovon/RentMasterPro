@@ -1,4 +1,4 @@
-const CACHE_NAME = 'rentmaster-pro-v2';
+const CACHE_NAME = 'rentmaster-pro-v2.0.7';
 const urlsToCache = [
   '/',
   '/index.html',
@@ -24,37 +24,44 @@ self.addEventListener('install', event => {
       .then(cache => {
         console.log('Opened cache');
         return cache.addAll(urlsToCache).catch(error => {
-          console.log('Cache addAll failed, some resources may not be available:', error);
-          // Continue installation even if some resources fail to cache
+          console.log('Cache add All failed, some resources may not be available:', error);
           return Promise.resolve();
         });
       })
   );
 });
 
-// Fetch event - serve from cache, fall back to network
+// Fetch event - network-first for navigation and app shell, cache-first for other assets
 self.addEventListener('fetch', event => {
-  event.respondWith(
-    caches.match(event.request)
-      .then(response => {
-        // Cache hit - return response
-        if (response) {
-          return response;
+  const request = event.request;
+  const url = new URL(request.url);
+  const isNavigate = request.mode === 'navigate';
+  const isAppShell = url.pathname === '/' || url.pathname === '/index.html' || url.pathname === '/js/app.js';
+
+  if (isNavigate || isAppShell) {
+    event.respondWith(
+      fetch(request).then(networkResponse => {
+        if (networkResponse && networkResponse.status === 200) {
+          const responseToCache = networkResponse.clone();
+          caches.open(CACHE_NAME).then(cache => cache.put(request, responseToCache));
         }
-        return fetch(event.request).then(response => {
-          // Check if valid response
-          if (!response || response.status !== 200 || response.type !== 'basic') {
-            return response;
-          }
-          // Clone response
-          const responseToCache = response.clone();
-          caches.open(CACHE_NAME)
-            .then(cache => {
-              cache.put(event.request, responseToCache);
-            });
-          return response;
-        });
-      })
+        return networkResponse;
+      }).catch(() => caches.match(request).then(response => response || caches.match('/index.html')))
+    );
+    return;
+  }
+
+  event.respondWith(
+    caches.match(request).then(response => {
+      return response || fetch(request).then(networkResponse => {
+        if (!networkResponse || networkResponse.status !== 200 || request.method !== 'GET') {
+          return networkResponse;
+        }
+        const responseToCache = networkResponse.clone();
+        caches.open(CACHE_NAME).then(cache => cache.put(request, responseToCache));
+        return networkResponse;
+      });
+    })
   );
 });
 
@@ -77,9 +84,9 @@ self.addEventListener('activate', event => {
 // Push event - handle incoming push notifications
 self.addEventListener('push', event => {
   console.log('Push notification received:', event);
-
+  
   let notificationData = {
-    title: 'RentMaster Pro',
+    title: 'RentMaster',
     body: 'You have a new notification',
     icon: '/assets/icon-192x192.png',
     badge: '/assets/icon-192x192.png',
