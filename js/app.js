@@ -249,6 +249,7 @@ async function renderOwner() {
 async function initiateBill(pid) {
     const db = await getDB(); 
     const p = db.properties.find(x => x.id == pid);
+    if(!p) return alert("Property not found.");
     const month = new Date().toLocaleString('default', { month: 'long', year: 'numeric' });
     if(p.billing.some(b => b.month == month)) return alert("Bill exists.");
     
