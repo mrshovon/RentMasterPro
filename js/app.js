@@ -585,7 +585,7 @@ async function renderOwner() {
                     </div>
                 </div>
                 <div class="grid-layout" style="font-size: 13px; border-bottom: 1px solid #eee; padding-bottom:10px;">
-                    <div><strong>Property:</strong> ${p.flatNo}, ${p.address}<br><strong>Owner:</strong> ${p.ownerName} (${p.ownerPhone || 'N/A'})</div>
+                    <div><strong>Property:</strong> ${p.address}, ${p.flatNo}<br><strong>Owner:</strong> ${p.ownerName} (${p.ownerPhone || 'N/A'})</div>
                     <div><strong>Tenant:</strong> ${isVacant ? '<i style="color:gray">No Active Tenant</i>' : p.tName + ' (' + (p.tFamily || 1) + ')'}<br><strong>ID:</strong> ${p.tId || 'N/A'} | <strong>Mob:</strong> ${p.tPhone || 'N/A'}</div>
                 </div>
                 <p>Rent: ৳${p.rent} + Service: <span style="cursor:pointer; text-decoration:underline; color:var(--owner);" onclick="openServiceChargeModal('${p.id}')">৳${p.serviceCharge || 0}</span> = <b>Total: ৳${p.totalRent}</b> | Advance: ৳${p.advance}</p>
@@ -903,11 +903,11 @@ async function openServiceChargeModal(propertyId) {
     const items = [
         { key: 'caretaker', label: 'Caretaker/Darwan' },
         { key: 'dustCollectors', label: 'Dust Collectors' },
-        { key: 'commonGas', label: 'Common Gas' },
-        { key: 'commonElectricity', label: 'Common Electricity' },
+        { key: 'commonGas', label: 'Common Gas*' },
+        { key: 'commonElectricity', label: 'Common Electricity*' },
         { key: 'securityGuard', label: 'Security Guard' },
         { key: 'liftMaintenance', label: 'Lift Maintenance' },
-        { key: 'water', label: 'Water' }
+        { key: 'water', label: 'Water*' }
     ];
     
     let itemsHtml = items.map(item => {
@@ -922,6 +922,7 @@ async function openServiceChargeModal(propertyId) {
     let modalContent = `
         <h3>Service Charge Breakdown</h3>
         <p style="font-size:13px; color:#64748b; margin-bottom:15px;">Property: ${p.name} (${p.id})</p>
+        <p style="font-size:13px; color:#FF0000; margin-bottom:15px;">The(*) amounts are typically usage-based services however,the above amounts shall remain fixed and unchanged throughout the deed period this clarification is provided for information purposes only.</p>
         <div class="grid-2" style="gap:15px;">
             ${itemsHtml}
         </div>
