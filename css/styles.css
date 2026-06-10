@@ -809,3 +809,10 @@ textarea::placeholder {
   outline: none;
   border-color: var(--master);
 }
+.login-icon-img {
+  width: 48px;
+  height: 48px;
+  margin-bottom: 12px;
+}
+   
+

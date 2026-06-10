@@ -202,6 +202,55 @@ async function uploadAgreementFile(propertyId, file) {
     alert('Agreement uploaded successfully. Tenant can now access the signed agreement.');
 }
 
+async function uploadIssueAttachments(propertyId, fileList) {
+    const supabase = initSupabase();
+    if (!supabase) {
+        alert('Supabase is not configured. Please provide Supabase URL and ANON key in appConfig.');
+        return null;
+    }
+
+    if (!fileList || fileList.length === 0) return [];
+
+    const allowedTypes = ['application/pdf', 'image/jpeg', 'image/png', 'image/jpg'];
+    const attachments = [];
+
+    for (let i = 0; i < fileList.length; i++) {
+        const file = fileList[i];
+        if (!allowedTypes.includes(file.type)) {
+            alert('Only PDF, JPG, JPEG, and PNG files are allowed for issue attachments.');
+            return null;
+        }
+        const safeFilename = file.name.replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_\.-]/g, '');
+        const storagePath = `issues/${propertyId}/${Date.now()}_${i}_${safeFilename}`;
+
+        const { error: uploadError } = await supabase.storage.from('RentMasterProDocs').upload(storagePath, file, {
+            upsert: true,
+        });
+
+        if (uploadError) {
+            console.error('Supabase upload error:', uploadError);
+            alert('Failed to upload issue attachment: ' + uploadError.message);
+            return null;
+        }
+
+        const { data: publicData, error: urlError } = supabase.storage.from('RentMasterProDocs').getPublicUrl(storagePath);
+        if (urlError || !publicData?.publicUrl) {
+            console.error('Supabase public URL error:', urlError);
+            alert('Issue attachment uploaded but public URL could not be generated.');
+            return null;
+        }
+
+        attachments.push({
+            name: file.name,
+            url: publicData.publicUrl,
+            type: file.type,
+            storagePath,
+        });
+    }
+
+    return attachments;
+}
+
 async function saveAgreementMetadata(propertyId, fileName, fileUrl, storagePath) {
     const db = await getDB();
     if (!db.properties) db.properties = [];
@@ -416,7 +465,8 @@ async function createNewProperty() {
         id: 'UNIT-'+Math.floor(1000+Math.random()*9000), name: $('#new-p-name').val(), address: $('#new-p-address').val(), flatNo: $('#new-p-flat').val(),
         tName: $('#new-t-name').val(), tId: $('#new-t-id').val(), tPhone: $('#new-t-phone').val(), tFamily: $('#new-t-family').val(),
         rent: rent, serviceCharge: service, totalRent: rent + service, advance: $('#new-p-advance').val(), rentedDate: $('#new-p-date').val(),
-        pass: $('#new-t-pass').val(), history: [], rentLogs: [], issues: [], solvedIssues: [], billing: []
+        pass: $('#new-t-pass').val(), history: [], rentLogs: [], issues: [], solvedIssues: [], billing: [],
+        serviceChargeBreakdown: { caretaker: 0, dustCollectors: 0, commonGas: 0, commonElectricity: 0, securityGuard: 0, liftMaintenance: 0, water: 0 }
     };
     if(!p.name || !p.tName) return alert("Fill required names");
     if (!db.properties) db.properties = [];
@@ -461,8 +511,18 @@ async function renderOwner() {
     ownerProperties.forEach((p) => {
         let hRows = (p.history || []).map(h => `<tr><td>${h.name}</td><td>${h.end}</td><td>৳${h.rent||0}</td><td>৳${h.srv||0}</td><td>৳${h.adv}</td></tr>`).join('');
         let rRows = (p.rentLogs || []).map(l => `<tr><td>${l.date}</td><td>৳${l.old} → ৳${l.new}</td></tr>`).join('');
-        let iHtml = (p.issues || []).map((s, j) => `<div class="issue-box">⚠️ ${s} <button class="btn btn-success" style="float:right; font-size:10px" onclick="fixIssue('${p.id}',${j})">Resolve</button></div>`).join('');
-        let sHtml = (p.solvedIssues || []).map(s => `<div class="resolved-box">✔️ ${s}</div>`).join('');
+        let iHtml = (p.issues || []).map((issue, j) => {
+            const desc = typeof issue === 'string' ? issue : issue.description || '';
+            const attachments = typeof issue === 'object' && issue.attachments ? issue.attachments : [];
+            const attachmentsHtml = attachments.length ? `<div style="margin-top:8px; display:flex; flex-wrap:wrap; gap:6px;">${attachments.map(file => `<a class="btn btn-edit" style="padding:4px 8px; font-size:12px" href="${file.url}" target="_blank" rel="noreferrer">${file.name || 'View'}</a>`).join('')}</div>` : '';
+            return `<div class="issue-box">⚠️ ${desc}${attachmentsHtml} <button class="btn btn-success" style="float:right; font-size:10px" onclick="fixIssue('${p.id}',${j})">Resolve</button></div>`;
+        }).join('');
+        let sHtml = (p.solvedIssues || []).map(issue => {
+            const desc = typeof issue === 'string' ? issue : issue.description || '';
+            const attachments = typeof issue === 'object' && issue.attachments ? issue.attachments : [];
+            const attachmentsHtml = attachments.length ? `<div style="margin-top:8px; display:flex; flex-wrap:wrap; gap:6px;">${attachments.map(file => `<a class="btn btn-edit" style="padding:4px 8px; font-size:12px" href="${file.url}" target="_blank" rel="noreferrer">${file.name || 'View'}</a>`).join('')}</div>` : '';
+            return `<div class="resolved-box">✔️ ${desc}${attachmentsHtml}</div>`;
+        }).join('');
         let bRows = (p.billing || []).map((b, bi) => {
             let action = b.status == 'pending' ? `<button class="btn btn-success" style="padding:2px 5px" onclick="confirmPayment('${p.id}', ${bi})">Confirm Payment</button>` : b.status == 'unpaid' ? `<small style="color:gray">Waiting...</small>` : `<span style="color:green; font-weight:bold">PAID</span>`;
             return `<tr><td>${b.month}</td><td>৳${b.amount}</td><td><span class="status-pill status-${b.status}">${b.status}</span></td><td>${action} <button class="btn btn-edit" style="padding:2px 5px" onclick="viewReceipt('${p.id}', ${bi}, 'Owner')">Receipt</button></td></tr>`;
@@ -496,7 +556,6 @@ async function renderOwner() {
                     <div>
                         <button class="btn btn-success" onclick="initiateBill('${p.id}')">Initiate Rent</button>
                         <button class="btn btn-edit" onclick="openPropEdit('${p.id}')">Edit</button>
-                        <button class="btn btn-owner" onclick="uploadAgreement('${p.id}')">Upload Agreement</button>
                         ${!isVacant ? `<button class="btn btn-vacate" onclick="openVacateModal('${p.id}')">Vacate</button>` : ''}
                         <button class="btn btn-danger" onclick="deleteProperty('${p.id}')">Delete</button>
                     </div>
@@ -505,7 +564,7 @@ async function renderOwner() {
                     <div><strong>Property:</strong> ${p.flatNo}, ${p.address}<br><strong>Owner:</strong> ${p.ownerName} (${p.ownerPhone || 'N/A'})</div>
                     <div><strong>Tenant:</strong> ${isVacant ? '<i style="color:gray">No Active Tenant</i>' : p.tName + ' (' + (p.tFamily || 1) + ')'}<br><strong>ID:</strong> ${p.tId || 'N/A'} | <strong>Mob:</strong> ${p.tPhone || 'N/A'}</div>
                 </div>
-                <p>Rent: ৳${p.rent} + Service: ৳${p.serviceCharge || 0} = <b>Total: ৳${p.totalRent}</b> | Advance: ৳${p.advance}</p>
+                <p>Rent: ৳${p.rent} + Service: <span style="cursor:pointer; text-decoration:underline; color:var(--owner);" onclick="openServiceChargeModal('${p.id}')">৳${p.serviceCharge || 0}</span> = <b>Total: ৳${p.totalRent}</b> | Advance: ৳${p.advance}</p>
                 ${agreementHtml}
                 <div style="margin-top:15px"><small><b>MONTHLY BILLING</b></small><table class="log-table"><thead><tr><th>Month</th><th>Amount</th><th>Status</th><th>Action</th></tr></thead><tbody>${bRows || '<tr><td colspan="4">No bills</td></tr>'}</tbody></table></div>
                 <div style="margin-top:10px"><small><b>MAINTENANCE</b></small>${iHtml}<div style="max-height:80px; overflow-y:auto; margin-top:5px">${sHtml}</div></div>
@@ -656,7 +715,9 @@ async function fixIssue(id, idx) {
     const p = db.properties.find(x => x.id == id);
     const res = p.issues.splice(idx, 1)[0];
     if(!p.solvedIssues) p.solvedIssues = [];
-    p.solvedIssues.push(res + " [Fixed: " + new Date().toLocaleDateString() + "]");
+    const resolvedIssue = typeof res === 'string' ? { description: res, createdAt: new Date().toLocaleDateString(), attachments: [] } : res;
+    resolvedIssue.resolvedAt = new Date().toLocaleDateString();
+    p.solvedIssues.push(resolvedIssue);
     await setDB(db);
     renderOwner();
 
@@ -702,6 +763,13 @@ async function processVacate(id) {
     p.history.push({ name: p.tName, end: endDate, adv: p.advance, rent: p.rent, srv: p.serviceCharge });
     p.tName = ""; p.tId = ""; p.tPhone = ""; p.tFamily = ""; p.pass = ""; p.rentedDate = "";
     p.rentLogs = []; p.issues = []; p.solvedIssues = []; p.billing = [];
+    
+    // Clear session if current tenant was vacated
+    if (curPid === id || (curIdx != null && db.properties[curIdx]?.id === id)) {
+        clearSessionState();
+        showView('#login-screen');
+    }
+    
     await setDB(db);
     $('#modal').hide();
     renderOwner();
@@ -799,6 +867,71 @@ async function savePropEdit(id) {
     }
 }
 
+async function openServiceChargeModal(propertyId) {
+    const db = await getDB();
+    const p = db.properties.find(x => x.id == propertyId);
+    if (!p) return alert('Property not found');
+    
+    const isOwner = sessionUser.id === p.ownerId || sessionUser.id === p.ownerName;
+    const breakdown = p.serviceChargeBreakdown || {};
+    
+    const items = [
+        { key: 'caretaker', label: 'Caretaker/Darwan' },
+        { key: 'dustCollectors', label: 'Dust Collectors' },
+        { key: 'commonGas', label: 'Common Gas' },
+        { key: 'commonElectricity', label: 'Common Electricity' },
+        { key: 'securityGuard', label: 'Security Guard' },
+        { key: 'liftMaintenance', label: 'Lift Maintenance' },
+        { key: 'water', label: 'Water' }
+    ];
+    
+    let itemsHtml = items.map(item => {
+        const value = breakdown[item.key] || 0;
+        if (isOwner) {
+            return `<div class="grid-2"><label><small>${item.label}</small></label><input type="number" class="sc-item" data-key="${item.key}" value="${value}" placeholder="0"></div>`;
+        } else {
+            return `<div class="grid-2"><label><small>${item.label}</small></label><div style="padding:8px; background:#f1f5f9; border-radius:4px; border:1px solid #e2e8f0;">৳${value}</div></div>`;
+        }
+    }).join('');
+    
+    let modalContent = `
+        <h3>Service Charge Breakdown</h3>
+        <p style="font-size:13px; color:#64748b; margin-bottom:15px;">Property: ${p.name} (${p.id})</p>
+        <div class="grid-2" style="gap:15px;">
+            ${itemsHtml}
+        </div>
+    `;
+    
+    if (isOwner) {
+        modalContent += `<button class="btn btn-owner" style="margin-top:15px; width:100%;" onclick="saveServiceChargeBreakdown('${propertyId}')">Save Breakdown</button>`;
+    }
+    
+    modalContent += `<button class="btn" style="margin-top:8px; width:100%;" onclick="$('#modal').hide()">Close</button>`;
+    
+    $('#modal-body').html(modalContent);
+    $('#modal').show().css('display','flex');
+}
+
+async function saveServiceChargeBreakdown(propertyId) {
+    const db = await getDB();
+    const p = db.properties.find(x => x.id == propertyId);
+    if (!p) return alert('Property not found');
+    
+    if (!p.serviceChargeBreakdown) p.serviceChargeBreakdown = {};
+    
+    const items = ['caretaker', 'dustCollectors', 'commonGas', 'commonElectricity', 'securityGuard', 'liftMaintenance', 'water'];
+    
+    items.forEach(key => {
+        const value = parseFloat($(`[data-key="${key}"]`).val()) || 0;
+        p.serviceChargeBreakdown[key] = value;
+    });
+    
+    await setDB(db);
+    $('#modal').hide();
+    renderOwner();
+    alert('Service charge breakdown updated successfully!');
+}
+
 async function deleteProperty(id) { 
     if(!confirm("Delete?")) return; 
     const db = await getDB(); 
@@ -887,7 +1020,7 @@ async function renderTenant() {
                     <div style="margin-bottom: 8px;"><strong>💰 Rent Breakdown</strong></div>
                     <div style="font-size: 13px; line-height: 1.8;">
                         <div>Base Rent: <b style="color: var(--tenant)">৳${p.rent.toLocaleString()}</b></div>
-                        <div>Service Charge: <b style="color: var(--tenant)">৳${(p.serviceCharge || 0).toLocaleString()}</b></div>
+                        <div>Service Charge: <span style="cursor:pointer; text-decoration:underline; color:var(--tenant); position:relative;" onclick="openServiceChargeModal('${p.id}')" title="Click to view breakdown">৳${(p.serviceCharge || 0).toLocaleString()} 📋</span></div>
                         <div>Total Monthly: <b style="color: var(--master); font-size: 14px;">৳${p.totalRent.toLocaleString()}</b></div>
                         <div style="margin-top: 8px;">Advance Paid: <b style="color: var(--success)">৳${p.advance.toLocaleString()}</b></div>
                     </div>
@@ -947,25 +1080,40 @@ async function tenantNotifyPay(bi) {
 }
 
 async function submitIssue() {
-    const text = $('#issue-text').val();
-    if(!text) return;
+    const text = $('#issue-text').val().trim();
+    if(!text) return alert('Please describe the problem before submitting.');
+    const attachmentInput = document.getElementById('issue-attachment-input');
+    const files = attachmentInput ? attachmentInput.files : [];
+
     const db = await getDB();
     if(!db.properties) {
         console.error('No properties in DB');
         return alert('Error: Property not found');
     }
     let p = null;
-        if (curPid) p = db.properties.find(x => x.id == curPid); // Locate property by curPid
+    if (curPid) p = db.properties.find(x => x.id == curPid); // Locate property by curPid
     if (!p && curIdx != null) p = db.properties[curIdx];
     if(!p) {
         console.error('Property not found', { curPid, curIdx });
         return alert('Error: Property not found');
     }
     if(!p.issues) p.issues = [];
-    p.issues.push(text + " (" + new Date().toLocaleDateString() + ")");
-    //console.log('Issue submitted. Total issues now:', p.issues.length);
+
+    let attachments = [];
+    if (files && files.length > 0) {
+        attachments = await uploadIssueAttachments(p.id, files);
+        if (attachments === null) return;
+    }
+
+    p.issues.push({
+        description: text,
+        createdAt: new Date().toLocaleDateString(),
+        attachments: attachments
+    });
+
     await setDB(db);
     $('#issue-text').val('');
+    if (attachmentInput) attachmentInput.value = '';
     renderTenant();
 
     // Send notification to owner
@@ -1431,7 +1579,17 @@ function updateMaintenanceUI(p) {
         if (!data) return []; // Handle null/undefined
         if (Array.isArray(data)) return data; // Already an array
         if (typeof data === 'string') return data.split(',').map(s => s.trim()).filter(s => s !== "");
-        return [data.toString()]; // Fallback for numbers or objects
+        return [data]; // Keep objects intact
+    };
+
+    const formatIssue = (issue) => {
+        if (typeof issue === 'string') {
+            return { text: issue, attachments: [] };
+        }
+        return {
+            text: issue.description || '',
+            attachments: issue.attachments || []
+        };
     };
 
     const openIssues = ensureArray(p.issues);
@@ -1451,22 +1609,28 @@ function updateMaintenanceUI(p) {
             <div id="maint-content-wrapper">`;
 
     // 1. Loop through Open Issues
-    openIssues.forEach(issue => {
+    openIssues.forEach(issueData => {
+        const issue = formatIssue(issueData);
+        const attachmentsHtml = issue.attachments.length ? `<div style="margin-top:8px; display:flex; flex-wrap:wrap; gap:6px;">${issue.attachments.map(file => `<a href="${file.url}" target="_blank" rel="noreferrer" style="font-size:12px; color:#1d4ed8; text-decoration:underline;">${file.name || 'View'}</a>`).join('')}</div>` : '';
         html += `
             <div class="maint-item unfixed">
                 <span class="status-dot"></span>
-                <span class="issue-text">${issue}</span>
+                <span class="issue-text">${issue.text}</span>
+                ${attachmentsHtml}
             </div>`;
     });
 
     // 2. Loop through Solved Issues (inside the scrollable list)
     if (solvedIssues.length > 0) {
         html += `<div class="maint-list">`;
-        solvedIssues.forEach(issue => {
+        solvedIssues.forEach(issueData => {
+            const issue = formatIssue(issueData);
+            const attachmentsHtml = issue.attachments.length ? `<div style="margin-top:8px; display:flex; flex-wrap:wrap; gap:6px;">${issue.attachments.map(file => `<a href="${file.url}" target="_blank" rel="noreferrer" style="font-size:12px; color:#1d4ed8; text-decoration:underline;">${file.name || 'View'}</a>`).join('')}</div>` : '';
             html += `
                 <div class="maint-item fixed">
                     <span class="status-dot"></span>
-                    <span class="issue-text">${issue}</span>
+                    <span class="issue-text">${issue.text}</span>
+                    ${attachmentsHtml}
                 </div>`;
         });
         html += `</div>`;

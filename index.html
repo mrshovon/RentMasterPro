@@ -67,7 +67,13 @@
       <div id="login-screen">
         <div class="login-card">
           <div class="login-header">
-            <i data-lucide="home" class="login-icon"></i>
+            <!-- <i data-lucide="home" class="login-icon"></i> -->
+            <img
+              src="assets/icon-192x192.png"
+              alt="login-icon"
+              srcset=""
+              class="login-icon-img"
+            />
             <h2>RentMaster Pro</h2>
             <p class="login-subtitle">Unified Rental Management System</p>
           </div>
@@ -351,6 +357,13 @@
             rows="2"
             placeholder="Describe the problem..."
           ></textarea>
+          <input
+            type="file"
+            id="issue-attachment-input"
+            style="margin-top: 10px"
+            accept=".pdf,.jpg,.jpeg,.png"
+            multiple
+          />
           <button
             class="btn btn-owner"
             style="background: var(--danger)"
